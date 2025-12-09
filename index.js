@@ -196,6 +196,7 @@ async function formatBytes(bytes) {
 }
 
 async function kvGet(db, key, type = 'text') {
+  if (!db) return null;
   try {
     const stmt = db.prepare("SELECT value, expiration FROM key_value WHERE key = ?").bind(key);
     const res = await stmt.first();
@@ -224,6 +225,7 @@ async function kvGet(db, key, type = 'text') {
 }
 
 async function kvPut(db, key, value, options = {}) {
+  if (!db) return;
   try {
     if (typeof value === 'object') {
       value = JSON.stringify(value);
@@ -242,6 +244,7 @@ async function kvPut(db, key, value, options = {}) {
 }
 
 async function kvDelete(db, key) {
+  if (!db) return;
   try {
     await db.prepare("DELETE FROM key_value WHERE key = ?").bind(key).run();
   } catch (e) {
@@ -251,8 +254,21 @@ async function kvDelete(db, key) {
 
 async function getUserData(env, uuid, ctx) {
   if (!isValidUUID(uuid)) return null;
+  
+  const configUUID = env.UUID || Config.userID;
+  if (uuid === configUUID) {
+    return {
+      uuid: uuid,
+      expiration_date: '2099-12-31',
+      expiration_time: '23:59:59',
+      traffic_limit: null,
+      traffic_used: 0,
+      ip_limit: -1,
+      notes: 'Config User'
+    };
+  }
+  
   if (!env.DB) {
-    console.error("D1 binding missing");
     return null;
   }
   
@@ -265,22 +281,27 @@ async function getUserData(env, uuid, ctx) {
     console.error(`Failed to get cached data for ${uuid}`, e);
   }
 
-  const userFromDb = await env.DB.prepare("SELECT * FROM users WHERE uuid = ?").bind(uuid).first();
-  if (!userFromDb) return null;
-  
-  const cachePromise = kvPut(env.DB, cacheKey, userFromDb, { expirationTtl: 3600 });
-  
-  if (ctx) {
-    ctx.waitUntil(cachePromise);
-  } else {
-    await cachePromise;
+  try {
+    const userFromDb = await env.DB.prepare("SELECT * FROM users WHERE uuid = ?").bind(uuid).first();
+    if (!userFromDb) return null;
+    
+    const cachePromise = kvPut(env.DB, cacheKey, userFromDb, { expirationTtl: 3600 });
+    
+    if (ctx) {
+      ctx.waitUntil(cachePromise);
+    } else {
+      await cachePromise;
+    }
+    
+    return userFromDb;
+  } catch (e) {
+    console.error(`Failed to get user data for ${uuid}:`, e);
+    return null;
   }
-  
-  return userFromDb;
 }
 
 async function updateUsage(env, uuid, bytes, ctx) {
-  if (bytes <= 0 || !uuid) return;
+  if (bytes <= 0 || !uuid || !env.DB) return;
   
   const usageLockKey = `usage_lock:${uuid}`;
   let lockAcquired = false;
@@ -319,6 +340,7 @@ async function updateUsage(env, uuid, bytes, ctx) {
 }
 
 async function cleanupOldIps(env, ctx) {
+  if (!env.DB) return;
   const cleanupPromise = env.DB.prepare(
     "DELETE FROM user_ips WHERE last_seen < datetime('now', ?)"
   ).bind(`-${CONST.IP_CLEANUP_AGE_DAYS} days`).run();
@@ -456,6 +478,7 @@ async function hashSHA256(str) {
 }
 
 async function checkRateLimit(db, key, limit, ttl) {
+  if (!db) return false;
   const countStr = await kvGet(db, key);
   const count = parseInt(countStr, 10) || 0;
   if (count >= limit) return true;
@@ -1320,6 +1343,8 @@ const adminPanelHTML = [
 // ============================================================================
 
 async function isAdmin(request, env) {
+  if (!env.DB) return false;
+  
   const cookieHeader = request.headers.get('Cookie');
   if (!cookieHeader) return false;
 
@@ -3965,6 +3990,11 @@ function socks5AddressParser(address) {
 // ============================================================================
 
 async function performHealthCheck(env, ctx) {
+  if (!env.DB) {
+    console.log('Health check skipped - no D1 database configured');
+    return;
+  }
+  
   const proxyIps = env.PROXYIPS ? env.PROXYIPS.split(',').map(ip => ip.trim()) : Config.proxyIPs;
   
   const healthStmts = [];
@@ -3997,9 +4027,12 @@ async function performHealthCheck(env, ctx) {
     );
   }
   
-  await env.DB.batch(healthStmts);
-  
-  console.log('Proxy health check completed.');
+  try {
+    await env.DB.batch(healthStmts);
+    console.log('Proxy health check completed.');
+  } catch (e) {
+    console.error('Failed to save health check results:', e);
+  }
 }
 
 // ============================================================================
