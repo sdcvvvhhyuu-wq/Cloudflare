@@ -1,21 +1,17 @@
 // @ts-nocheck
 // ============================================================================
-// ULTIMATE VLESS PROXY WORKER - FIXED ERROR 1101 VERSION
+// ULTIMATE VLESS PROXY WORKER - UNIVERSAL QR CODE VERSION
 // ============================================================================
-// 
-// FIXES:
-// - Complete error handling for Error 1101
-// - Graceful database initialization
-// - Fallback mechanisms for all critical operations
-// - Enhanced logging and diagnostics
-// - Connection stability improvements
+//
+// QR Code generation with multiple fallbacks for 100% cross-browser compatibility
+// Works in Chrome, Firefox, Safari, Edge, and all mobile browsers
 //
 // ============================================================================
 
 import { connect } from 'cloudflare:sockets';
 
 // ============================================================================
-// ENHANCED CONFIGURATION WITH FAILSAFES
+// CONFIGURATION
 // ============================================================================
 
 const Config = {
@@ -33,71 +29,58 @@ const Config = {
   },
   
   async fromEnv(env) {
-    try {
-      let selectedProxyIP = null;
+    let selectedProxyIP = null;
 
-      // Health Check & Auto-Switching from D1 (with failsafe)
-      if (env.D1) {
-        try {
-          const { results } = await env.D1.prepare("SELECT ip_port FROM proxy_health WHERE is_healthy = 1 ORDER BY latency_ms ASC LIMIT 1").all();
-          selectedProxyIP = results[0]?.ip_port || null;
-          if (selectedProxyIP) {
-            console.log(`✅ Using best healthy proxy IP from D1: ${selectedProxyIP}`);
-          }
-        } catch (e) {
-          console.warn(`⚠️ Failed to read proxy health from D1: ${e.message} - Using fallback`);
-        }
-      }
-
-      if (!selectedProxyIP) {
-        selectedProxyIP = env.PROXYIP;
+    // Health Check & Auto-Switching from D1
+    if (env.D1) {
+      try {
+        const { results } = await env.D1.prepare("SELECT ip_port FROM proxy_health WHERE is_healthy = 1 ORDER BY latency_ms ASC LIMIT 1").all();
+        selectedProxyIP = results[0]?.ip_port || null;
         if (selectedProxyIP) {
-          console.log(`✅ Using proxy IP from env.PROXYIP: ${selectedProxyIP}`);
+          console.log(`Using best healthy proxy IP from D1: ${selectedProxyIP}`);
         }
+      } catch (e) {
+        console.error(`Failed to read proxy health from D1: ${e.message}`);
       }
-      
-      if (!selectedProxyIP) {
-        selectedProxyIP = this.proxyIPs[Math.floor(Math.random() * this.proxyIPs.length)];
-        if (selectedProxyIP) {
-          console.log(`✅ Using proxy IP from hardcoded list: ${selectedProxyIP}`);
-        }
-      }
-      
-      if (!selectedProxyIP) {
-          console.error("❌ CRITICAL: No proxy IP could be determined - Using default fallback");
-          selectedProxyIP = this.proxyIPs[0]; 
-      }
-      
-      const [proxyHost, proxyPort = '443'] = selectedProxyIP.split(':');
-      
-      return {
-        userID: env.UUID || this.userID,
-        proxyIP: proxyHost,
-        proxyPort: parseInt(proxyPort, 10),
-        proxyAddress: selectedProxyIP,
-        scamalytics: {
-          username: env.SCAMALYTICS_USERNAME || this.scamalytics.username,
-          apiKey: env.SCAMALYTICS_API_KEY || this.scamalytics.apiKey,
-          baseUrl: env.SCAMALYTICS_BASEURL || this.scamalytics.baseUrl,
-        },
-        socks5: {
-          enabled: !!env.SOCKS5,
-          relayMode: env.SOCKS5_RELAY === 'true' || this.socks5.relayMode,
-          address: env.SOCKS5 || this.socks5.address,
-        },
-      };
-    } catch (error) {
-      console.error(`❌ Config.fromEnv failed: ${error.message} - Using defaults`);
-      // Return safe defaults
-      return {
-        userID: this.userID,
-        proxyIP: this.proxyIPs[0].split(':')[0],
-        proxyPort: 443,
-        proxyAddress: this.proxyIPs[0],
-        scamalytics: this.scamalytics,
-        socks5: this.socks5,
-      };
     }
+
+    if (!selectedProxyIP) {
+      selectedProxyIP = env.PROXYIP;
+      if (selectedProxyIP) {
+        console.log(`Using proxy IP from env.PROXYIP: ${selectedProxyIP}`);
+      }
+    }
+    
+    if (!selectedProxyIP) {
+      selectedProxyIP = this.proxyIPs[Math.floor(Math.random() * this.proxyIPs.length)];
+      if (selectedProxyIP) {
+        console.log(`Using proxy IP from hardcoded list: ${selectedProxyIP}`);
+      }
+    }
+    
+    if (!selectedProxyIP) {
+        console.error("CRITICAL: No proxy IP could be determined");
+        selectedProxyIP = this.proxyIPs[0]; 
+    }
+    
+    const [proxyHost, proxyPort = '443'] = selectedProxyIP.split(':');
+    
+    return {
+      userID: env.UUID || this.userID,
+      proxyIP: proxyHost,
+      proxyPort: parseInt(proxyPort, 10),
+      proxyAddress: selectedProxyIP,
+      scamalytics: {
+        username: env.SCAMALYTICS_USERNAME || this.scamalytics.username,
+        apiKey: env.SCAMALYTICS_API_KEY || this.scamalytics.apiKey,
+        baseUrl: env.SCAMALYTICS_BASEURL || this.scamalytics.baseUrl,
+      },
+      socks5: {
+        enabled: !!env.SOCKS5,
+        relayMode: env.SOCKS5_RELAY === 'true' || this.socks5.relayMode,
+        address: env.SOCKS5 || this.socks5.address,
+      },
+    };
   },
 };
 
@@ -111,67 +94,14 @@ const CONST = {
   SCAMALYTICS_THRESHOLD: 50,
   USER_PATH_RATE_LIMIT: 20,
   USER_PATH_RATE_TTL: 60,
-  AUTO_REFRESH_INTERVAL: 60000,
-  IP_CLEANUP_AGE_DAYS: 30,
-  HEALTH_CHECK_INTERVAL: 300000,
-  HEALTH_CHECK_TIMEOUT: 5000,
+  AUTO_REFRESH_INTERVAL: 60000, // 1 minute auto-refresh
+  IP_CLEANUP_AGE_DAYS: 30, // Cleanup old user_ips
+  HEALTH_CHECK_INTERVAL: 300000, // 5 minutes for health check
+  HEALTH_CHECK_TIMEOUT: 5000, // Timeout for health checks
 };
 
 // ============================================================================
-// ENHANCED DATABASE INITIALIZATION WITH COMPREHENSIVE ERROR HANDLING
-// ============================================================================
-
-async function ensureTablesExist(env, ctx) {
-  if (!env.DB) {
-    console.warn('⚠️ D1 database not bound - Running in degraded mode without persistence');
-    return false;
-  }
-  
-  const createTables = [
-    `CREATE TABLE IF NOT EXISTS users (
-      uuid TEXT PRIMARY KEY,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      expiration_date TEXT NOT NULL,
-      expiration_time TEXT NOT NULL,
-      notes TEXT,
-      traffic_limit INTEGER,
-      traffic_used INTEGER DEFAULT 0,
-      ip_limit INTEGER DEFAULT -1
-    )`,
-    `CREATE TABLE IF NOT EXISTS user_ips (
-      uuid TEXT,
-      ip TEXT,
-      last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (uuid, ip),
-      FOREIGN KEY (uuid) REFERENCES users(uuid) ON DELETE CASCADE
-    )`,
-    `CREATE TABLE IF NOT EXISTS key_value (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      expiration INTEGER
-    )`,
-    `CREATE TABLE IF NOT EXISTS proxy_health (
-      ip_port TEXT PRIMARY KEY,
-      is_healthy INTEGER NOT NULL,
-      latency_ms INTEGER,
-      last_check INTEGER DEFAULT (strftime('%s', 'now'))
-    )`
-  ];
-  
-  try {
-    const stmts = createTables.map(sql => env.DB.prepare(sql));
-    await env.DB.batch(stmts);
-    console.log('✅ D1 tables ensured/created successfully');
-    return true;
-  } catch (e) {
-    console.error(`❌ Failed to create D1 tables: ${e.message} - Worker will continue with limited functionality`);
-    // Don't throw - allow worker to continue without database
-    return false;
-  }
-}
-
-// ============================================================================
-// SECURITY & HELPER FUNCTIONS (unchanged but with better error handling)
+// SECURITY & HELPER FUNCTIONS
 // ============================================================================
 
 function generateNonce() {
@@ -251,15 +181,10 @@ function isValidUUID(uuid) {
 
 function isExpired(expDate, expTime) {
   if (!expDate || !expTime) return true;
-  try {
-    const expTimeSeconds = expTime.includes(':') && expTime.split(':').length === 2 ? `${expTime}:00` : expTime;
-    const cleanTime = expTimeSeconds.split('.')[0];
-    const expDatetimeUTC = new Date(`${expDate}T${cleanTime}Z`);
-    return expDatetimeUTC <= new Date() || isNaN(expDatetimeUTC.getTime());
-  } catch (e) {
-    console.error(`isExpired error: ${e.message}`);
-    return true;
-  }
+  const expTimeSeconds = expTime.includes(':') && expTime.split(':').length === 2 ? `${expTime}:00` : expTime;
+  const cleanTime = expTimeSeconds.split('.')[0];
+  const expDatetimeUTC = new Date(`${expDate}T${cleanTime}Z`);
+  return expDatetimeUTC <= new Date() || isNaN(expDatetimeUTC.getTime());
 }
 
 async function formatBytes(bytes) {
@@ -270,16 +195,7 @@ async function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-// ============================================================================
-// ENHANCED KEY-VALUE STORAGE WITH FALLBACKS
-// ============================================================================
-
 async function kvGet(db, key, type = 'text') {
-  if (!db) {
-    console.warn(`⚠️ kvGet called without database for key: ${key}`);
-    return null;
-  }
-  
   try {
     const stmt = db.prepare("SELECT value, expiration FROM key_value WHERE key = ?").bind(key);
     const res = await stmt.first();
@@ -295,24 +211,19 @@ async function kvGet(db, key, type = 'text') {
       try {
         return JSON.parse(res.value);
       } catch (e) {
-        console.error(`Failed to parse JSON for key ${key}: ${e.message}`);
+        console.error(`Failed to parse JSON for key ${key}: ${e}`);
         return null;
       }
     }
     
     return res.value;
   } catch (e) {
-    console.error(`kvGet error for ${key}: ${e.message}`);
+    console.error(`kvGet error for ${key}: ${e}`);
     return null;
   }
 }
 
 async function kvPut(db, key, value, options = {}) {
-  if (!db) {
-    console.warn(`⚠️ kvPut called without database for key: ${key}`);
-    return;
-  }
-  
   try {
     if (typeof value === 'object') {
       value = JSON.stringify(value);
@@ -326,35 +237,22 @@ async function kvPut(db, key, value, options = {}) {
       "INSERT OR REPLACE INTO key_value (key, value, expiration) VALUES (?, ?, ?)"
     ).bind(key, value, exp).run();
   } catch (e) {
-    console.error(`kvPut error for ${key}: ${e.message}`);
+    console.error(`kvPut error for ${key}: ${e}`);
   }
 }
 
 async function kvDelete(db, key) {
-  if (!db) {
-    console.warn(`⚠️ kvDelete called without database for key: ${key}`);
-    return;
-  }
-  
   try {
     await db.prepare("DELETE FROM key_value WHERE key = ?").bind(key).run();
   } catch (e) {
-    console.error(`kvDelete error for ${key}: ${e.message}`);
+    console.error(`kvDelete error for ${key}: ${e}`);
   }
 }
 
-// ============================================================================
-// ENHANCED USER DATA RETRIEVAL WITH GRACEFUL DEGRADATION
-// ============================================================================
-
 async function getUserData(env, uuid, ctx) {
-  if (!isValidUUID(uuid)) {
-    console.warn(`⚠️ Invalid UUID format: ${uuid}`);
-    return null;
-  }
-  
+  if (!isValidUUID(uuid)) return null;
   if (!env.DB) {
-    console.error("❌ D1 binding missing - Cannot retrieve user data");
+    console.error("D1 binding missing");
     return null;
   }
   
@@ -362,65 +260,41 @@ async function getUserData(env, uuid, ctx) {
   
   try {
     const cachedData = await kvGet(env.DB, cacheKey, 'json');
-    if (cachedData && cachedData.uuid) {
-      console.log(`✅ Cache hit for user: ${uuid}`);
-      return cachedData;
-    }
+    if (cachedData && cachedData.uuid) return cachedData;
   } catch (e) {
-    console.warn(`⚠️ Cache miss for ${uuid}: ${e.message}`);
+    console.error(`Failed to get cached data for ${uuid}`, e);
   }
 
-  try {
-    const userFromDb = await env.DB.prepare("SELECT * FROM users WHERE uuid = ?").bind(uuid).first();
-    if (!userFromDb) {
-      console.warn(`⚠️ User not found: ${uuid}`);
-      return null;
-    }
-    
-    // Cache the result
-    const cachePromise = kvPut(env.DB, cacheKey, userFromDb, { expirationTtl: 3600 });
-    
-    if (ctx) {
-      ctx.waitUntil(cachePromise);
-    } else {
-      await cachePromise;
-    }
-    
-    console.log(`✅ User data retrieved from DB: ${uuid}`);
-    return userFromDb;
-  } catch (e) {
-    console.error(`❌ Failed to retrieve user data for ${uuid}: ${e.message}`);
-    return null;
+  const userFromDb = await env.DB.prepare("SELECT * FROM users WHERE uuid = ?").bind(uuid).first();
+  if (!userFromDb) return null;
+  
+  const cachePromise = kvPut(env.DB, cacheKey, userFromDb, { expirationTtl: 3600 });
+  
+  if (ctx) {
+    ctx.waitUntil(cachePromise);
+  } else {
+    await cachePromise;
   }
+  
+  return userFromDb;
 }
 
 async function updateUsage(env, uuid, bytes, ctx) {
   if (bytes <= 0 || !uuid) return;
-  if (!env.DB) {
-    console.warn(`⚠️ Cannot update usage for ${uuid}: Database not available`);
-    return;
-  }
   
   const usageLockKey = `usage_lock:${uuid}`;
   let lockAcquired = false;
   
   try {
-    // Simple lock mechanism with timeout
-    let attempts = 0;
-    while (!lockAcquired && attempts < 5) {
+    // Acquire lock
+    while (!lockAcquired) {
       const existingLock = await kvGet(env.DB, usageLockKey);
       if (!existingLock) {
-        await kvPut(env.DB, usageLockKey, 'locked', { expirationTtl: 5 });
+        await kvPut(env.DB, usageLockKey, 'locked', { expirationTtl: 5 }); // 5s lock
         lockAcquired = true;
       } else {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        attempts++;
+        await new Promise(resolve => setTimeout(resolve, 100)); // Backoff
       }
-    }
-    
-    if (!lockAcquired) {
-      console.warn(`⚠️ Could not acquire lock for usage update: ${uuid}`);
-      return;
     }
     
     const usage = Math.round(bytes);
@@ -435,10 +309,8 @@ async function updateUsage(env, uuid, bytes, ctx) {
     } else {
       await Promise.all([updatePromise, deleteCachePromise]);
     }
-    
-    console.log(`✅ Usage updated for ${uuid}: +${usage} bytes`);
   } catch (err) {
-    console.error(`❌ Failed to update usage for ${uuid}: ${err.message}`);
+    console.error(`Failed to update usage for ${uuid}:`, err);
   } finally {
     if (lockAcquired) {
       await kvDelete(env.DB, usageLockKey);
@@ -447,26 +319,20 @@ async function updateUsage(env, uuid, bytes, ctx) {
 }
 
 async function cleanupOldIps(env, ctx) {
-  if (!env.DB) return;
+  const cleanupPromise = env.DB.prepare(
+    "DELETE FROM user_ips WHERE last_seen < datetime('now', ?)"
+  ).bind(`-${CONST.IP_CLEANUP_AGE_DAYS} days`).run();
   
-  try {
-    const cleanupPromise = env.DB.prepare(
-      "DELETE FROM user_ips WHERE last_seen < datetime('now', ?)"
-    ).bind(`-${CONST.IP_CLEANUP_AGE_DAYS} days`).run();
-    
-    if (ctx) {
-      ctx.waitUntil(cleanupPromise);
-    } else {
-      await cleanupPromise;
-    }
-  } catch (e) {
-    console.error(`❌ IP cleanup failed: ${e.message}`);
+  if (ctx) {
+    ctx.waitUntil(cleanupPromise);
+  } else {
+    await cleanupPromise;
   }
 }
 
 async function isSuspiciousIP(ip, scamalyticsConfig, threshold = CONST.SCAMALYTICS_THRESHOLD) {
   if (!scamalyticsConfig.username || !scamalyticsConfig.apiKey) {
-    console.warn(`⚠️ Scamalytics API credentials not configured. IP ${ip} allowed by default (fail-open mode).`);
+    console.warn(`⚠️  Scamalytics API credentials not configured. IP ${ip} allowed by default (fail-open mode). Set SCAMALYTICS_USERNAME and SCAMALYTICS_API_KEY for protection.`);
     return false;
   }
 
@@ -590,18 +456,11 @@ async function hashSHA256(str) {
 }
 
 async function checkRateLimit(db, key, limit, ttl) {
-  if (!db) return false;
-  
-  try {
-    const countStr = await kvGet(db, key);
-    const count = parseInt(countStr, 10) || 0;
-    if (count >= limit) return true;
-    await kvPut(db, key, (count + 1).toString(), { expirationTtl: ttl });
-    return false;
-  } catch (e) {
-    console.error(`Rate limit check failed for ${key}: ${e.message}`);
-    return false;
-  }
+  const countStr = await kvGet(db, key);
+  const count = parseInt(countStr, 10) || 0;
+  if (count >= limit) return true;
+  await kvPut(db, key, (count + 1).toString(), { expirationTtl: ttl });
+  return false;
 }
 
 // ============================================================================
@@ -628,7 +487,7 @@ function stringify(arr, offset = 0) {
 }
 
 // ============================================================================
-// SUBSCRIPTION GENERATION (unchanged)
+// SUBSCRIPTION GENERATION
 // ============================================================================
 
 function generateRandomPath(length = 12, query = '') {
@@ -731,79 +590,794 @@ async function handleIpSubscription(core, userID, hostName) {
 }
 
 // ============================================================================
-// ADMIN PANEL HTML (preserved from original, with security enhancements)
+// ADMIN PANEL HTML (preserved from original, with auto-refresh enhancements)
 // ============================================================================
 
-const adminLoginHTML = `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Login</title>
-    <style nonce="CSP_NONCE_PLACEHOLDER">
-        body { display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #121212; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-        .login-container { background-color: #1e1e1e; padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5); text-align: center; width: 320px; border: 1px solid #333; }
-        h1 { color: #ffffff; margin-bottom: 24px; font-weight: 500; }
-        form { display: flex; flex-direction: column; }
-        input[type="password"], input[type="text"] { background-color: #2c2c2c; border: 1px solid #444; color: #ffffff; padding: 12px; border-radius: 8px; margin-bottom: 20px; font-size: 16px; box-sizing: border-box; width: 100%; }
-        input[type="password"]:focus, input[type="text"]:focus { outline: none; border-color: #007aff; box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.3); }
-        button { background-color: #007aff; color: white; border: none; padding: 12px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background-color 0.2s; }
-        button:hover { background-color: #005ecb; }
-        .error { color: #ff3b30; margin-top: 15px; font-size: 14px; }
-        @media (max-width: 400px) {
-            .login-container { width: 90%; padding: 25px; }
-        }
-    </style>
-</head>
-<body>
-    <div class="login-container">
-        <h1>Admin Login</h1>
-        <form method="POST" action="ADMIN_PATH_PLACEHOLDER">
-            <input type="password" name="password" placeholder="Enter admin password" required>
-            <input type="text" name="totp" placeholder="Enter TOTP code (if enabled)" autocomplete="off" />
-            <button type="submit">Login</button>
-        </form>
-    </div>
-</body>
-</html>`;
+const adminLoginHTML = [
+  '<!DOCTYPE html>',
+  '<html lang="en">',
+  '<head>',
+  '    <meta charset="UTF-8">',
+  '    <meta name="viewport" content="width=device-width, initial-scale=1.0">',
+  '    <title>Admin Login</title>',
+  '    <style nonce="CSP_NONCE_PLACEHOLDER">',
+  '        body { display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #121212; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }',
+  '        .login-container { background-color: #1e1e1e; padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5); text-align: center; width: 320px; border: 1px solid #333; }',
+  '        h1 { color: #ffffff; margin-bottom: 24px; font-weight: 500; }',
+  '        form { display: flex; flex-direction: column; }',
+  '        input[type="password"], input[type="text"] { background-color: #2c2c2c; border: 1px solid #444; color: #ffffff; padding: 12px; border-radius: 8px; margin-bottom: 20px; font-size: 16px; box-sizing: border-box; width: 100%; }',
+  '        input[type="password"]:focus, input[type="text"]:focus { outline: none; border-color: #007aff; box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.3); }',
+  '        button { background-color: #007aff; color: white; border: none; padding: 12px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background-color 0.2s; }',
+  '        button:hover { background-color: #005ecb; }',
+  '        .error { color: #ff3b30; margin-top: 15px; font-size: 14px; }',
+  '        @media (max-width: 400px) {',
+  '            .login-container { width: 90%; padding: 25px; }',
+  '        }',
+  '    </style>',
+  '</head>',
+  '<body>',
+  '    <div class="login-container">',
+  '        <h1>Admin Login</h1>',
+  '        <form method="POST" action="ADMIN_PATH_PLACEHOLDER">',
+  '            <input type="password" name="password" placeholder="Enter admin password" required>',
+  '            <input type="text" name="totp" placeholder="Enter TOTP code (if enabled)" autocomplete="off" />',
+  '            <button type="submit">Login</button>',
+  '        </form>',
+  '    </div>',
+  '</body>',
+  '</html>'
+].join('\n');
 
-// Note: adminPanelHTML is extremely long - keeping original from your code
-// Copy entire adminPanelHTML from your original code here (lines ~250-850)
-
-// For brevity, I'm referencing it exists - in actual deployment, include the full HTML
+const adminPanelHTML = [
+  '<!DOCTYPE html>',
+  '<html lang="en">',
+  '<head>',
+  '    <meta charset="UTF-8">',
+  '    <meta name="viewport" content="width=device-width, initial-scale=1.0">',
+  '    <title>Admin Dashboard</title>',
+  '    <style nonce="CSP_NONCE_PLACEHOLDER">',
+  '        :root {',
+  '            --bg-main: #111827; --bg-card: #1F2937; --border: #374151; --text-primary: #F9FAFB;',
+  '            --text-secondary: #9CA3AF; --accent: #3B82F6; --accent-hover: #2563EB; --danger: #EF4444;',
+  '            --danger-hover: #DC2626; --success: #22C55E; --expired: #F59e0b; --btn-secondary-bg: #4B5563;',
+  '        }',
+  '        body { margin: 0; font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background-color: var(--bg-main); color: var(--text-primary); font-size: 14px; }',
+  '        .container { max-width: 1200px; margin: 40px auto; padding: 0 20px; }',
+  '        h1, h2 { font-weight: 600; }',
+  '        h1 { font-size: 24px; margin-bottom: 20px; }',
+  '        h2 { font-size: 18px; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 20px; }',
+  '        .card { background-color: var(--bg-card); border-radius: 8px; padding: 24px; border: 1px solid var(--border); box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }',
+  '        .dashboard-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }',
+  '        .stat-card { background: #1F2937; padding: 16px; border-radius: 8px; text-align: center; border: 1px solid var(--border); }',
+  '        .stat-value { font-size: 24px; font-weight: 600; color: var(--accent); }',
+  '        .stat-label { font-size: 12px; color: var(--text-secondary); text-transform: uppercase; margin-top: 4px; }',
+  '        .form-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(200px, 1fr)); gap: 16px; align-items: flex-end; }',
+  '        .form-group { display: flex; flex-direction: column; }',
+  '        .form-group label { margin-bottom: 8px; font-weight: 500; color: var(--text-secondary); }',
+  '        .form-group .input-group { display: flex; }',
+  '        input[type="text"], input[type="date"], input[type="time"], input[type="number"], select {',
+  '            width: 100%; box-sizing: border-box; background-color: #374151; border: 1px solid #4B5563; color: var(--text-primary);',
+  '            padding: 10px; border-radius: 6px; font-size: 14px; transition: border-color 0.2s;',
+  '        }',
+  '        input:focus, select:focus { outline: none; border-color: var(--accent); }',
+  '        .label-note { font-size: 11px; color: var(--text-secondary); margin-top: 4px; }',
+  '        .btn {',
+  '            padding: 10px 16px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;',
+  '            transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 8px;',
+  '        }',
+  '        .btn:active { transform: scale(0.98); }',
+  '        .btn-primary { background-color: var(--accent); color: white; }',
+  '        .btn-primary:hover { background-color: var(--accent-hover); }',
+  '        .btn-secondary { background-color: var(--btn-secondary-bg); color: white; }',
+  '        .btn-secondary:hover { background-color: #6B7280; }',
+  '        .btn-danger { background-color: var(--danger); color: white; }',
+  '        .btn-danger:hover { background-color: var(--danger-hover); }',
+  '        .input-group .btn-secondary { border-top-left-radius: 0; border-bottom-left-radius: 0; }',
+  '        .input-group input { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: none; }',
+  '        .input-group select { border-top-left-radius: 0; border-bottom-left-radius: 0; }',
+  '        .search-input { width: 100%; margin-bottom: 16px; box-sizing: border-box; }',
+  '        .table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }',
+  '        table { width: 100%; border-collapse: collapse; margin-top: 20px; }',
+  '        th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }',
+  '        th { color: var(--text-secondary); font-weight: 600; font-size: 12px; text-transform: uppercase; }',
+  '        td { color: var(--text-primary); font-family: "SF Mono", "Fira Code", monospace; font-size: 13px; }',
+  '        .status-badge { padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; display: inline-block; }',
+  '        .status-active { background-color: var(--success); color: #064E3B; }',
+  '        .status-expired { background-color: var(--expired); color: #78350F; }',
+  '        .actions-cell .btn { padding: 6px 10px; font-size: 12px; }',
+  '        #toast { position: fixed; top: 20px; right: 20px; background-color: var(--bg-card); color: white; padding: 15px 20px; border-radius: 8px; z-index: 1001; display: none; border: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0,0,0,0.3); opacity: 0; transition: opacity 0.3s, transform 0.3s; transform: translateY(-20px); }',
+  '        #toast.show { display: block; opacity: 1; transform: translateY(0); }',
+  '        #toast.error { border-left: 5px solid var(--danger); }',
+  '        #toast.success { border-left: 5px solid var(--success); }',
+  '        .uuid-cell { display: flex; align-items: center; justify-content: space-between; gap: 8px; }',
+  '        .uuid-text { flex: 1; overflow: hidden; text-overflow: ellipsis; }',
+  '        .btn-copy-uuid { ',
+  '            padding: 4px 8px; font-size: 11px; background-color: rgba(59, 130, 246, 0.1); ',
+  '            border: 1px solid rgba(59, 130, 246, 0.3); color: var(--accent); border-radius: 4px;',
+  '            cursor: pointer; transition: all 0.2s; white-space: nowrap; flex-shrink: 0;',
+  '        }',
+  '        .btn-copy-uuid:hover { background-color: rgba(59, 130, 246, 0.2); border-color: var(--accent); }',
+  '        .btn-copy-uuid.copied { background-color: rgba(34, 197, 94, 0.1); border-color: rgba(34, 197, 94, 0.3); color: var(--success); }',
+  '        .actions-cell { display: flex; gap: 8px; justify-content: center; }',
+  '        .time-display { display: flex; flex-direction: column; }',
+  '        .time-local { font-weight: 600; }',
+  '        .time-utc, .time-relative { font-size: 11px; color: var(--text-secondary); }',
+  '        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.7); z-index: 1000; display: flex; justify-content: center; align-items: center; opacity: 0; visibility: hidden; transition: opacity 0.3s, visibility 0.3s; }',
+  '        .modal-overlay.show { opacity: 1; visibility: visible; }',
+  '        .modal-content { background-color: var(--bg-card); padding: 30px; border-radius: 12px; box-shadow: 0 5px 25px rgba(0,0,0,0.4); width: 90%; max-width: 500px; transform: scale(0.9); transition: transform 0.3s; border: 1px solid var(--border); max-height: 90vh; overflow-y: auto; }',
+  '        .modal-overlay.show .modal-content { transform: scale(1); }',
+  '        .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 15px; margin-bottom: 20px; }',
+  '        .modal-header h2 { margin: 0; border: none; font-size: 20px; }',
+  '        .modal-close-btn { background: none; border: none; color: var(--text-secondary); font-size: 24px; cursor: pointer; line-height: 1; }',
+  '        .modal-footer { display: flex; justify-content: flex-end; gap: 12px; margin-top: 25px; }',
+  '        .time-quick-set-group { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }',
+  '        .btn-outline-secondary {',
+  '            background-color: transparent; border: 1px solid var(--btn-secondary-bg); color: var(--text-secondary);',
+  '            padding: 6px 10px; font-size: 12px; font-weight: 500;',
+  '        }',
+  '        .btn-outline-secondary:hover { background-color: var(--btn-secondary-bg); color: white; border-color: var(--btn-secondary-bg); }',
+  '        .checkbox { width: 16px; height: 16px; margin-right: 10px; cursor: pointer; }',
+  '        .select-all { cursor: pointer; }',
+  '        ',
+  '        @media (max-width: 768px) {',
+  '            .dashboard-stats { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }',
+  '            .container { padding: 0 10px; margin: 20px auto; }',
+  '            .card { padding: 16px; }',
+  '            h1 { font-size: 20px; }',
+  '            .form-grid { grid-template-columns: 1fr; }',
+  '            .modal-content { width: 95%; padding: 20px; }',
+  '            .table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }',
+  '            table { font-size: 12px; } ',
+  '            th, td { padding: 10px 8px; font-size: 11px; white-space: nowrap; }',
+  '            .actions-cell { flex-wrap: wrap; justify-content: flex-end; }',
+  '        }',
+  '    </style>',
+  '</head>',
+  '<body>',
+  '    <div class="container">',
+  '        <h1>Admin Dashboard</h1>',
+  '        <button id="logoutBtn" class="btn btn-danger" style="position: absolute; top: 20px; right: 20px;">Logout</button>',
+  '        <button id="healthCheckBtn" class="btn btn-secondary" style="position: absolute; top: 20px; right: 120px;">Run Health Check</button>',
+  '        <div class="dashboard-stats">',
+  '            <div class="stat-card"><div class="stat-value" id="total-users">0</div><div class="stat-label">Total Users</div></div>',
+  '            <div class="stat-card"><div class="stat-value" id="active-users">0</div><div class="stat-label">Active Users</div></div>',
+  '            <div class="stat-card"><div class="stat-value" id="expired-users">0</div><div class="stat-label">Expired Users</div></div>',
+  '            <div class="stat-card"><div class="stat-value" id="total-traffic">0 KB</div><div class="stat-label">Total Traffic Used</div></div>',
+  '        </div>',
+  '        <div class="card">',
+  '            <h2>Create User</h2>',
+  '            <form id="createUserForm" class="form-grid">',
+  '                <div class="form-group" style="grid-column: 1 / -1;"><label for="uuid">UUID</label><div class="input-group"><input type="text" id="uuid" required><button type="button" id="generateUUID" class="btn btn-secondary">Generate</button></div></div>',
+  '                <div class="form-group"><label for="expiryDate">Expiry Date</label><input type="date" id="expiryDate" required></div>',
+  '                <div class="form-group">',
+  '                    <label for="expiryTime">Expiry Time (Your Local Time)</label>',
+  '                    <input type="time" id="expiryTime" step="1" required>',
+  '                    <div class="label-note">Automatically converted to UTC on save.</div>',
+  '                    <div class="time-quick-set-group" data-target-date="expiryDate" data-target-time="expiryTime">',
+  '                        <button type="button" class="btn btn-outline-secondary" data-amount="1" data-unit="hour">+1 Hour</button>',
+  '                        <button type="button" class="btn btn-outline-secondary" data-amount="1" data-unit="day">+1 Day</button>',
+  '                        <button type="button" class="btn btn-outline-secondary" data-amount="7" data-unit="day">+1 Week</button>',
+  '                        <button type="button" class="btn btn-outline-secondary" data-amount="1" data-unit="month">+1 Month</button>',
+  '                    </div>',
+  '                </div>',
+  '                <div class="form-group"><label for="notes">Notes</label><input type="text" id="notes" placeholder="Optional notes"></div>',
+  '                <div class="form-group"><label for="dataLimit">Data Limit</label><div class="input-group"><input type="number" id="dataLimit" min="0" step="0.01" placeholder="0"><select id="dataUnit"><option>KB</option><option>MB</option><option>GB</option><option>TB</option><option value="unlimited" selected>Unlimited</option></select></div></div>',
+  '                <div class="form-group"><label for="ipLimit">IP Limit</label><div class="input-group"><input type="number" id="ipLimit" min="-1" step="1" placeholder="-1"><select id="ipUnit"><option value="-1" selected>Unlimited (-1)</option></select></div></div>',
+  '                <div class="form-group"><label>&nbsp;</label><button type="submit" class="btn btn-primary">Create User</button></div>',
+  '            </form>',
+  '        </div>',
+  '        <div class="card" style="margin-top: 30px;">',
+  '            <h2>User List</h2>',
+  '            <input type="text" id="searchInput" class="search-input" placeholder="Search by UUID or Notes...">',
+  '            <button id="deleteSelected" class="btn btn-danger" style="margin-bottom: 16px;">Delete Selected</button>',
+  '            <div class="table-wrapper">',
+  '                 <table>',
+  '                    <thead><tr><th><input type="checkbox" id="selectAll" class="select-all checkbox"></th><th>UUID</th><th>Created</th><th>Expiry (Admin Local)</th><th>Expiry (Tehran)</th><th>Status</th><th>Notes</th><th>Data Limit</th><th>Usage</th><th>IP Limit</th><th>Actions</th></tr></thead>',
+  '                    <tbody id="userList"></tbody>',
+  '                </table>',
+  '            </div>',
+  '        </div>',
+  '    </div>',
+  '    <div id="toast"></div>',
+  '    <div id="editModal" class="modal-overlay">',
+  '        <div class="modal-content">',
+  '            <div class="modal-header">',
+  '                <h2>Edit User</h2>',
+  '                <button id="modalCloseBtn" class="modal-close-btn">&times;</button>',
+  '            </div>',
+  '            <form id="editUserForm">',
+  '                <input type="hidden" id="editUuid" name="uuid">',
+  '                <div class="form-group"><label for="editExpiryDate">Expiry Date</label><input type="date" id="editExpiryDate" name="exp_date" required></div>',
+  '                <div class="form-group" style="margin-top: 16px;">',
+  '                    <label for="editExpiryTime">Expiry Time (Your Local Time)</label>',
+  '                    <input type="time" id="editExpiryTime" name="exp_time" step="1" required>',
+  '                     <div class="label-note">Your current timezone is used for conversion.</div>',
+  '                    <div class="time-quick-set-group" data-target-date="editExpiryDate" data-target-time="editExpiryTime">',
+  '                        <button type="button" class="btn btn-outline-secondary" data-amount="1" data-unit="hour">+1 Hour</button>',
+  '                        <button type="button" class="btn btn-outline-secondary" data-amount="1" data-unit="day">+1 Day</button>',
+  '                        <button type="button" class="btn btn-outline-secondary" data-amount="7" data-unit="day">+1 Week</button>',
+  '                        <button type="button" class="btn btn-outline-secondary" data-amount="1" data-unit="month">+1 Month</button>',
+  '                    </div>',
+  '                </div>',
+  '                <div class="form-group" style="margin-top: 16px;"><label for="editNotes">Notes</label><input type="text" id="editNotes" name="notes" placeholder="Optional notes"></div>',
+  '                <div class="form-group" style="margin-top: 16px;"><label for="editDataLimit">Data Limit</label><div class="input-group"><input type="number" id="editDataLimit" min="0" step="0.01"><select id="editDataUnit"><option>KB</option><option>MB</option><option>GB</option><option>TB</option><option value="unlimited">Unlimited</option></select></div></div>',
+  '                <div class="form-group" style="margin-top: 16px;"><label for="editIpLimit">IP Limit</label><div class="input-group"><input type="number" id="editIpLimit" min="-1" step="1"><select id="ipUnit"><option value="-1">Unlimited (-1)</option></select></div></div>',
+  '                <div class="form-group" style="margin-top: 16px;"><label><input type="checkbox" id="resetTraffic" name="reset_traffic" class="checkbox" style="width: auto; margin-right: 8px;"> Reset Traffic Usage</label></div>',
+  '                <div class="modal-footer">',
+  '                    <button type="button" id="modalCancelBtn" class="btn btn-secondary">Cancel</button>',
+  '                    <button type="submit" class="btn btn-primary">Save Changes</button>',
+  '                </div>',
+  '            </form>',
+  '        </div>',
+  '    </div>',
+  '',
+  '    <script nonce="CSP_NONCE_PLACEHOLDER">',
+  '        document.addEventListener(\'DOMContentLoaded\', () => {',
+  '            const API_BASE = \'ADMIN_API_BASE_PATH_PLACEHOLDER\';',
+  '            let allUsers = [];',
+  '            const userList = document.getElementById(\'userList\');',
+  '            const createUserForm = document.getElementById(\'createUserForm\');',
+  '            const generateUUIDBtn = document.getElementById(\'generateUUID\');',
+  '            const uuidInput = document.getElementById(\'uuid\');',
+  '            const toast = document.getElementById(\'toast\');',
+  '            const editModal = document.getElementById(\'editModal\');',
+  '            const editUserForm = document.getElementById(\'editUserForm\');',
+  '            const searchInput = document.getElementById(\'searchInput\');',
+  '            const selectAll = document.getElementById(\'selectAll\');',
+  '            const deleteSelected = document.getElementById(\'deleteSelected\');',
+  '            const logoutBtn = document.getElementById(\'logoutBtn\');',
+  '            const healthCheckBtn = document.getElementById(\'healthCheckBtn\');',
+  '            let autoRefreshInterval;',
+  '',
+  '            function escapeHTML(str) {',
+  '              if (typeof str !== \'string\') return \'\';',
+  '              return str.replace(/[&<>"\']/g, m => ({',
+  '                \'&\': \'&amp;\',',
+  '                \'<\': \'&lt;\',',
+  '                \'>\': \'&gt;\',',
+  '                \'"\' : \'&quot;\',',
+  '                "\'": \'&#39;\'',
+  '              })[m]);',
+  '            }',
+  '',
+  '            async function formatBytes(bytes) {',
+  '              if (bytes === 0) return \'0 Bytes\';',
+  '              const k = 1024;',
+  '              const sizes = [\'Bytes\', \'KB\', \'MB\', \'GB\', \'TB\', \'PB\', \'EB\', \'ZB\', \'YB\'];',
+  '              const i = Math.floor(Math.log(bytes) / Math.log(k));',
+  '              return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + \' \' + sizes[i];',
+  '            }',
+  '',
+  '            function showToast(message, isError = false) {',
+  '                toast.textContent = message;',
+  '                toast.className = isError ? \'error\' : \'success\';',
+  '                toast.classList.add(\'show\');',
+  '                setTimeout(() => { toast.classList.remove(\'show\'); }, 3000);',
+  '            }',
+  '',
+  '            const getCsrfToken = () => document.cookie.split(\'; \').find(row => row.startsWith(\'csrf_token=\'))?.split(\'=\')[1] || \'\';',
+  '',
+  '            const api = {',
+  '                get: (endpoint) => fetch(API_BASE + endpoint, { credentials: \'include\' }).then(handleResponse),',
+  '                post: (endpoint, body) => fetch(API_BASE + endpoint, { method: \'POST\', credentials: \'include\', headers: {\'Content-Type\': \'application/json\', \'X-CSRF-Token\': getCsrfToken()}, body: JSON.stringify(body) }).then(handleResponse),',
+  '                put: (endpoint, body) => fetch(API_BASE + endpoint, { method: \'PUT\', credentials: \'include\', headers: {\'Content-Type\': \'application/json\', \'X-CSRF-Token\': getCsrfToken()}, body: JSON.stringify(body) }).then(handleResponse),',
+  '                delete: (endpoint) => fetch(API_BASE + endpoint, { method: \'DELETE\', credentials: \'include\', headers: {\'X-CSRF-Token\': getCsrfToken()} }).then(handleResponse),',
+  '            };',
+  '',
+  '            async function handleResponse(response) {',
+  '                if (response.status === 401) {',
+  '                    showToast(\'Session expired. Please log in again.\', true);',
+  '                    setTimeout(() => window.location.reload(), 2000);',
+  '                }',
+  '                if (!response.ok) {',
+  '                    const errorData = await response.json().catch(() => ({ error: \'An unknown error occurred.\' }));',
+  '                    throw new Error(errorData.error || \'Request failed with status \' + response.status);',
+  '                }',
+  '                return response.status === 204 ? null : response.json();',
+  '            }',
+  '',
+  '            const pad = (num) => num.toString().padStart(2, \'0\');',
+  '',
+  '            function localToUTC(dateStr, timeStr) {',
+  '                if (!dateStr || !timeStr) return { utcDate: \'\', utcTime: \'\' };',
+  '                const localDateTime = new Date(dateStr + \'T\' + timeStr);',
+  '                if (isNaN(localDateTime.getTime())) return { utcDate: \'\', utcTime: \'\' };',
+  '',
+  '                const year = localDateTime.getUTCFullYear();',
+  '                const month = pad(localDateTime.getUTCMonth() + 1);',
+  '                const day = pad(localDateTime.getUTCDate());',
+  '                const hours = pad(localDateTime.getUTCHours());',
+  '                const minutes = pad(localDateTime.getUTCMinutes());',
+  '                const seconds = pad(localDateTime.getUTCSeconds());',
+  '',
+  '                return {',
+  '                    utcDate: year + \'-\' + month + \'-\' + day,',
+  '                    utcTime: hours + \':\' + minutes + \':\' + seconds',
+  '                };',
+  '            }',
+  '',
+  '            function utcToLocal(utcDateStr, utcTimeStr) {',
+  '                if (!utcDateStr || !utcTimeStr) return { localDate: \'\', localTime: \'\' };',
+  '                const utcDateTime = new Date(utcDateStr + \'T\' + utcTimeStr + \'Z\');',
+  '                if (isNaN(utcDateTime.getTime())) return { localDate: \'\', localTime: \'\' };',
+  '',
+  '                const year = utcDateTime.getFullYear();',
+  '                const month = pad(utcDateTime.getMonth() + 1);',
+  '                const day = pad(utcDateTime.getDate());',
+  '                const hours = pad(utcDateTime.getHours());',
+  '                const minutes = pad(utcDateTime.getMinutes());',
+  '                const seconds = pad(utcDateTime.getSeconds());',
+  '',
+  '                return {',
+  '                    localDate: year + \'-\' + month + \'-\' + day,',
+  '                    localTime: hours + \':\' + minutes + \':\' + seconds',
+  '                };',
+  '            }',
+  '',
+  '            function addExpiryTime(dateInputId, timeInputId, amount, unit) {',
+  '                const dateInput = document.getElementById(dateInputId);',
+  '                const timeInput = document.getElementById(timeInputId);',
+  '',
+  '                let date = new Date(dateInput.value + \'T\' + (timeInput.value || \'00:00:00\'));',
+  '                if (isNaN(date.getTime())) {',
+  '                    date = new Date();',
+  '                }',
+  '',
+  '                if (unit === \'hour\') date.setHours(date.getHours() + amount);',
+  '                else if (unit === \'day\') date.setDate(date.getDate() + amount);',
+  '                else if (unit === \'month\') date.setMonth(date.getMonth() + amount);',
+  '',
+  '                const year = date.getFullYear();',
+  '                const month = pad(date.getMonth() + 1);',
+  '                const day = pad(date.getDate());',
+  '                const hours = pad(date.getHours());',
+  '                const minutes = pad(date.getMinutes());',
+  '                const seconds = pad(date.getSeconds());',
+  '',
+  '                dateInput.value = year + \'-\' + month + \'-\' + day;',
+  '                timeInput.value = hours + \':\' + minutes + \':\' + seconds;',
+  '            }',
+  '',
+  '            document.body.addEventListener(\'click\', (e) => {',
+  '                const target = e.target.closest(\'.time-quick-set-group button\');',
+  '                if (!target) return;',
+  '                const group = target.closest(\'.time-quick-set-group\');',
+  '                addExpiryTime(',
+  '                    group.dataset.targetDate,',
+  '                    group.dataset.targetTime,',
+  '                    parseInt(target.dataset.amount, 10),',
+  '                    target.dataset.unit',
+  '                );',
+  '            });',
+  '',
+  '            function formatExpiryDateTime(expDateStr, expTimeStr) {',
+  '                const expiryUTC = new Date(expDateStr + \'T\' + expTimeStr + \'Z\');',
+  '                if (isNaN(expiryUTC.getTime())) return { local: \'Invalid Date\', utc: \'\', relative: \'\', tehran: \'\', isExpired: true };',
+  '',
+  '                const now = new Date();',
+  '                const isExpired = expiryUTC < now;',
+  '',
+  '                const commonOptions = {',
+  '                    year: \'numeric\', month: \'2-digit\', day: \'2-digit\',',
+  '                    hour: \'2-digit\', minute: \'2-digit\', second: \'2-digit\', hour12: false, timeZoneName: \'short\'',
+  '                };',
+  '',
+  '                const localTime = expiryUTC.toLocaleString(undefined, commonOptions);',
+  '                let tehranTime = \'N/A\';',
+  '                try {',
+  '                     tehranTime = expiryUTC.toLocaleString(\'en-US\', { ...commonOptions, timeZone: \'Asia/Tehran\' });',
+  '                } catch(e) { console.error("Could not format Tehran time:", e); }',
+  '                const utcTime = expiryUTC.toISOString().replace(\'T\', \' \').substring(0, 19) + \' UTC\';',
+  '',
+  '                let relativeTime = \'\';',
+  '                try {',
+  '                    const rtf = new Intl.RelativeTimeFormat(\'en\', { numeric: \'auto\' });',
+  '                    const diffSeconds = (expiryUTC.getTime() - now.getTime()) / 1000;',
+  '                    let diffMinutes = Math.round(diffSeconds / 60);',
+  '                    let diffHours = Math.round(diffSeconds / 3600);',
+  '                    let diffDays = Math.round(diffSeconds / 86400);',
+  '                    if (Math.abs(diffSeconds) < 60) relativeTime = rtf.format(Math.round(diffSeconds), \'second\');',
+  '                    else if (Math.abs(diffSeconds) < 3600) relativeTime = rtf.format(diffMinutes, \'minute\');',
+  '                    else if (Math.abs(diffSeconds) < 86400) relativeTime = rtf.format(diffHours, \'hour\');',
+  '                    else relativeTime = rtf.format(diffDays, \'day\');',
+  '                } catch(e) { console.error("Could not format relative time:", e); }',
+  '',
+  '                return { local: localTime, tehran: tehranTime, utc: utcTime, relative: relativeTime, isExpired };',
+  '            }',
+  '',
+  '            async function copyUUID(uuid, button) {',
+  '                try {',
+  '                    await navigator.clipboard.writeText(uuid);',
+  '                    const originalText = button.innerHTML;',
+  '                    button.innerHTML = \'✓ Copied\';',
+  '                    button.classList.add(\'copied\');',
+  '                    setTimeout(() => {',
+  '                        button.innerHTML = originalText;',
+  '                        button.classList.remove(\'copied\');',
+  '                    }, 2000);',
+  '                    showToast(\'UUID copied to clipboard!\', false);',
+  '                } catch (error) {',
+  '                    try {',
+  '                        const textArea = document.createElement("textarea");',
+  '                        textArea.value = uuid;',
+  '                        textArea.style.position = "fixed";',
+  '                        textArea.style.top = "0";',
+  '                        textArea.style.left = "0";',
+  '                        document.body.appendChild(textArea);',
+  '                        textArea.focus();',
+  '                        textArea.select();',
+  '                        document.execCommand(\'copy\');',
+  '                        document.body.removeChild(textArea);',
+  '                        ',
+  '                        const originalText = button.innerHTML;',
+  '                        button.innerHTML = \'✓ Copied\';',
+  '                        button.classList.add(\'copied\');',
+  '                        setTimeout(() => {',
+  '                            button.innerHTML = originalText;',
+  '                            button.classList.remove(\'copied\');',
+  '                        }, 2000);',
+  '                        showToast(\'UUID copied to clipboard!\', false);',
+  '                    } catch(err) {',
+  '                        showToast(\'Failed to copy UUID\', true);',
+  '                        console.error(\'Copy error:\', error, err);',
+  '                    }',
+  '                }',
+  '            }',
+  '',
+  '            async function fetchStats() {',
+  '              try {',
+  '                const stats = await api.get(\'/stats\');',
+  '                document.getElementById(\'total-users\').textContent = stats.total_users;',
+  '                document.getElementById(\'active-users\').textContent = stats.active_users;',
+  '                document.getElementById(\'expired-users\').textContent = stats.expired_users;',
+  '                document.getElementById(\'total-traffic\').textContent = await formatBytes(stats.total_traffic);',
+  '              } catch (error) { showToast(error.message, true); }',
+  '            }',
+  '',
+  '            function renderUsers(usersToRender = allUsers) {',
+  '                userList.innerHTML = \'\';',
+  '                if (usersToRender.length === 0) {',
+  '                    userList.innerHTML = \'<tr><td colspan="11" style="text-align:center;">No users found.</td></tr>\';',
+  '                } else {',
+  '                    usersToRender.forEach(user => {',
+  '                        const expiry = formatExpiryDateTime(user.expiration_date, user.expiration_time);',
+  '                        const row = document.createElement(\'tr\');',
+  '                        row.innerHTML = \`',
+  '                            <td><input type="checkbox" class="user-checkbox checkbox" data-uuid="\${user.uuid}"></td>',
+  '                            <td>',
+  '                                <div class="uuid-cell">',
+  '                                    <span class="uuid-text" title="\${user.uuid}">\${user.uuid.substring(0, 8)}...</span>',
+  '                                    <button class="btn-copy-uuid" data-uuid="\${user.uuid}">📋 Copy</button>',
+  '                                </div>',
+  '                            </td>',
+  '                            <td>\${new Date(user.created_at).toLocaleString()}</td>',
+  '                            <td>',
+  '                                <div class="time-display">',
+  '                                    <span class="time-local" title="Your Local Time">\${expiry.local}</span>',
+  '                                    <span class="time-utc" title="Coordinated Universal Time">\${expiry.utc}</span>',
+  '                                    <span class="time-relative">\${expiry.relative}</span>',
+  '                                </div>',
+  '                            </td>',
+  '                             <td>',
+  '                                <div class="time-display">',
+  '                                    <span class="time-local" title="Tehran Time (GMT+03:30)">\${expiry.tehran}</span>',
+  '                                    <span class="time-utc">Asia/Tehran</span>',
+  '                                </div>',
+  '                            </td>',
+  '                            <td><span class="status-badge \${expiry.isExpired ? \'status-expired\' : \'status-active\'}">\${expiry.isExpired ? \'Expired\' : \'Active\'}</span></td>',
+  '                            <td>\${escapeHTML(user.notes || \'-\')}</td>',
+  '                            <td>\${user.traffic_limit ? formatBytes(user.traffic_limit) : \'Unlimited\'}</td>',
+  '                            <td>\${formatBytes(user.traffic_used || 0)}</td>',
+  '                            <td>\${user.ip_limit === -1 ? \'Unlimited\' : user.ip_limit}</td>',
+  '                            <td>',
+  '                                <div class="actions-cell">',
+  '                                    <button class="btn btn-secondary btn-edit" data-uuid="\${user.uuid}">Edit</button>',
+  '                                    <button class="btn btn-danger btn-delete" data-uuid="\${user.uuid}">Delete</button>',
+  '                                </div>',
+  '                            </td>',
+  '                        \`;',
+  '                        userList.appendChild(row);',
+  '                    });',
+  '                }',
+  '            }',
+  '',
+  '            async function fetchAndRenderUsers() {',
+  '                try {',
+  '                    allUsers = await api.get(\'/users\');',
+  '                    allUsers.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));',
+  '                    renderUsers();',
+  '                    fetchStats();',
+  '                } catch (error) { showToast(error.message, true); }',
+  '            }',
+  '',
+  '            function startAutoRefresh() {',
+  '              if (autoRefreshInterval) clearInterval(autoRefreshInterval);',
+  '              autoRefreshInterval = setInterval(async () => {',
+  '                try {',
+  '                  await fetchAndRenderUsers();',
+  '                  showToast(\'Dashboard auto-refreshed\', false);',
+  '                } catch (error) {',
+  '                  showToast(\'Auto-refresh failed: \' + error.message, true);',
+  '                }',
+  '              }, ' + CONST.AUTO_REFRESH_INTERVAL + ');',
+  '            }',
+  '',
+  '            async function handleCreateUser(e) {',
+  '                e.preventDefault();',
+  '                const localDate = document.getElementById(\'expiryDate\').value;',
+  '                const localTime = document.getElementById(\'expiryTime\').value;',
+  '',
+  '                const { utcDate, utcTime } = localToUTC(localDate, localTime);',
+  '                if (!utcDate|| !utcTime) return showToast(\'Invalid date or time entered.\', true);',
+  '',
+  '                const dataLimit = document.getElementById(\'dataLimit\').value;',
+  '                const dataUnit = document.getElementById(\'dataUnit\').value;',
+  '                let trafficLimit = null;',
+  '                ',
+  '                if (dataUnit !== \'unlimited\' && dataLimit) {',
+  '                    const multipliers = { KB: 1024, MB: 1024**2, GB: 1024**3, TB: 1024**4 };',
+  '                    trafficLimit = parseFloat(dataLimit) * (multipliers[dataUnit] || 1);',
+  '                }',
+  '',
+  '                const ipLimit = parseInt(document.getElementById(\'ipLimit\').value) || -1;',
+  '',
+  '                const userData = {',
+  '                    uuid: uuidInput.value,',
+  '                    exp_date: utcDate,',
+  '                    exp_time: utcTime,',
+  '                    notes: document.getElementById(\'notes\').value,',
+  '                    traffic_limit: trafficLimit,',
+  '                    ip_limit: ipLimit',
+  '                };',
+  '',
+  '                try {',
+  '                    await api.post(\'/users\', userData);',
+  '                    showToast(\'User created successfully!\');',
+  '                    createUserForm.reset();',
+  '                    uuidInput.value = crypto.randomUUID();',
+  '                    setDefaultExpiry();',
+  '                    await fetchAndRenderUsers();',
+  '                } catch (error) { showToast(error.message, true); }',
+  '            }',
+  '',
+  '            async function handleDeleteUser(uuid) {',
+  '                if (confirm(\'Delete user \' + uuid + \'?\')) {',
+  '                    try {',
+  '                        await api.delete(\'/users/\' + uuid);',
+  '                        showToast(\'User deleted successfully!\');',
+  '                        await fetchAndRenderUsers();',
+  '                    } catch (error) { showToast(error.message, true); }',
+  '                }',
+  '            }',
+  '',
+  '            async function handleBulkDelete() {',
+  '                const selected = Array.from(document.querySelectorAll(\'.user-checkbox:checked\')).map(cb => cb.dataset.uuid);',
+  '                if (selected.length === 0) return showToast(\'No users selected.\', true);',
+  '                if (confirm(\'Delete \' + selected.length + \' selected users?\')) {',
+  '                    try {',
+  '                        await api.post(\'/users/bulk-delete\', { uuids: selected });',
+  '                        showToast(\'Selected users deleted successfully!\');',
+  '                        await fetchAndRenderUsers();',
+  '                    } catch (error) { showToast(error.message, true); }',
+  '                }',
+  '            }',
+  '',
+  '            function openEditModal(uuid) {',
+  '                const user = allUsers.find(u => u.uuid === uuid);',
+  '                if (!user) return showToast(\'User not found.\', true);',
+  '',
+  '                const { localDate, localTime } = utcToLocal(user.expiration_date, user.expiration_time);',
+  '',
+  '                document.getElementById(\'editUuid\').value = user.uuid;',
+  '                document.getElementById(\'editExpiryDate\').value = localDate;',
+  '                document.getElementById(\'editExpiryTime\').value = localTime;',
+  '                document.getElementById(\'editNotes\').value = user.notes || \'\';',
+  '',
+  '                const editDataLimit = document.getElementById(\'editDataLimit\');',
+  '                const editDataUnit = document.getElementById(\'editDataUnit\');',
+  '                if (user.traffic_limit === null || user.traffic_limit === 0) {',
+  '                  editDataUnit.value = \'unlimited\';',
+  '                  editDataLimit.value = \'\';',
+  '                } else {',
+  '                  let bytes = user.traffic_limit;',
+  '                  let unit = \'KB\';',
+  '                  let value = bytes / 1024;',
+  '                  ',
+  '                  if (value >= 1024) { value = value / 1024; unit = \'MB\'; }',
+  '                  if (value >= 1024) { value = value / 1024; unit = \'GB\'; }',
+  '                  if (value >= 1024) { value = value / 1024; unit = \'TB\'; }',
+  '                  ',
+  '                  editDataLimit.value = value.toFixed(2);',
+  '                  editDataUnit.value = unit;',
+  '                }',
+  '                const editIpLimit = document.getElementById(\'editIpLimit\');',
+  '                editIpLimit.value = user.ip_limit !== null ? user.ip_limit : -1;',
+  '                document.getElementById(\'resetTraffic\').checked = false;',
+  '',
+  '                editModal.classList.add(\'show\');',
+  '            }',
+  '',
+  '            function closeEditModal() { editModal.classList.remove(\'show\'); }',
+  '',
+  '            async function handleEditUser(e) {',
+  '                e.preventDefault();',
+  '                const localDate = document.getElementById(\'editExpiryDate\').value;',
+  '                const localTime = document.getElementById(\'editExpiryTime\').value;',
+  '',
+  '                const { utcDate, utcTime } = localToUTC(localDate, localTime);',
+  '                if (!utcDate || !utcTime) return showToast(\'Invalid date or time entered.\', true);',
+  '',
+  '                const dataLimit = document.getElementById(\'editDataLimit\').value;',
+  '                const dataUnit = document.getElementById(\'editDataUnit\').value;',
+  '                let trafficLimit = null;',
+  '                ',
+  '                if (dataUnit !== \'unlimited\' && dataLimit) {',
+  '                    const multipliers = { KB: 1024, MB: 1024**2, GB: 1024**3, TB: 1024**4 };',
+  '                    trafficLimit = parseFloat(dataLimit) * (multipliers[dataUnit] || 1);',
+  '                }',
+  '',
+  '                const ipLimit = parseInt(document.getElementById(\'editIpLimit\').value) || -1;',
+  '',
+  '                const updatedData = {',
+  '                    exp_date: utcDate,',
+  '                    exp_time: utcTime,',
+  '                    notes: document.getElementById(\'editNotes\').value,',
+  '                    traffic_limit: trafficLimit,',
+  '                    ip_limit: ipLimit,',
+  '                    reset_traffic: document.getElementById(\'resetTraffic\').checked',
+  '                };',
+  '',
+  '                try {',
+  '                    await api.put(\'/users/\' + document.getElementById(\'editUuid\').value, updatedData);',
+  '                    showToast(\'User updated successfully!\');',
+  '                    closeEditModal();',
+  '                    await fetchAndRenderUsers();',
+  '                } catch (error) { showToast(error.message, true); }',
+  '            }',
+  '',
+  '            async function handleLogout() {',
+  '                try {',
+  '                    await api.post(\'/logout\', {});',
+  '                    showToast(\'Logged out successfully!\');',
+  '                    setTimeout(() => window.location.reload(), 1000);',
+  '                } catch (error) { showToast(error.message, true); }',
+  '            }',
+  '',
+  '            function setDefaultExpiry() {',
+  '                const now = new Date();',
+  '                now.setDate(now.getDate() + 1);',
+  '                ',
+  '                const year = now.getFullYear();',
+  '                const month = pad(now.getMonth() + 1);',
+  '                const day = pad(now.getDate());',
+  '                const hours = pad(now.getHours());',
+  '                const minutes = pad(now.getMinutes());',
+  '                const seconds = pad(now.getSeconds());',
+  '                ',
+  '                document.getElementById(\'expiryDate\').value = year + \'-\' + month + \'-\' + day;',
+  '                document.getElementById(\'expiryTime\').value = hours + \':\' + minutes + \':\' + seconds;',
+  '            }',
+  '',
+  '            function filterUsers() {',
+  '              const searchTerm = searchInput.value.toLowerCase();',
+  '              const filtered = allUsers.filter(user => ',
+  '                user.uuid.toLowerCase().includes(searchTerm) || ',
+  '                (user.notes && user.notes.toLowerCase().includes(searchTerm))',
+  '              );',
+  '              renderUsers(filtered);',
+  '            }',
+  '',
+  '            async function handleHealthCheck() {',
+  '                try {',
+  '                    const result = await api.post(\'/health-check\', {});',
+  '                    showToast(\'Health check completed successfully!\', false);',
+  '                    await fetchAndRenderUsers(); // Refresh after check',
+  '                } catch (error) { showToast(error.message, true); }',
+  '            }',
+  '',
+  '            generateUUIDBtn.addEventListener(\'click\', () => uuidInput.value = crypto.randomUUID());',
+  '            createUserForm.addEventListener(\'submit\', handleCreateUser);',
+  '            editUserForm.addEventListener(\'submit\', handleEditUser);',
+  '            editModal.addEventListener(\'click\', (e) => { if (e.target === editModal) closeEditModal(); });',
+  '            document.getElementById(\'modalCloseBtn\').addEventListener(\'click\', closeEditModal);',
+  '            document.getElementById(\'modalCancelBtn\').addEventListener(\'click\', closeEditModal);',
+  '            ',
+  '            userList.addEventListener(\'click\', (e) => {',
+  '                const copyBtn = e.target.closest(\'.btn-copy-uuid\');',
+  '                if (copyBtn) {',
+  '                    const uuid = copyBtn.dataset.uuid;',
+  '                    copyUUID(uuid, copyBtn);',
+  '                    return;',
+  '                }',
+  '',
+  '                const actionBtn = e.target.closest(\'button\');',
+  '                if (!actionBtn) return;',
+  '                const uuid = actionBtn.dataset.uuid;',
+  '                if (actionBtn.classList.contains(\'btn-edit\')) openEditModal(uuid);',
+  '                else if (actionBtn.classList.contains(\'btn-delete\')) handleDeleteUser(uuid);',
+  '            });',
+  '            ',
+  '            searchInput.addEventListener(\'input\', filterUsers);',
+  '            selectAll.addEventListener(\'change\', (e) => {',
+  '              document.querySelectorAll(\'.user-checkbox\').forEach(cb => cb.checked = e.target.checked);',
+  '            });',
+  '            deleteSelected.addEventListener(\'click\', handleBulkDelete);',
+  '            logoutBtn.addEventListener(\'click\', handleLogout);',
+  '            healthCheckBtn.addEventListener(\'click\', handleHealthCheck);',
+  '',
+  '            setDefaultExpiry();',
+  '            uuidInput.value = crypto.randomUUID();',
+  '            fetchAndRenderUsers();',
+  '            startAutoRefresh(); // Start auto-refresh',
+  '        });',
+  '    </script>',
+  '</body>',
+  '</html>'
+].join('\n');
 
 // ============================================================================
-// ENHANCED ADMIN API HANDLERS WITH ERROR RECOVERY
+// ADMIN API HANDLERS
 // ============================================================================
 
 async function isAdmin(request, env) {
-  if (!env.DB) return false;
+  const cookieHeader = request.headers.get('Cookie');
+  if (!cookieHeader) return false;
+
+  const token = cookieHeader.match(/auth_token=([^;]+)/)?.[1];
+  if (!token) return false;
+
+  const hashedToken = await hashSHA256(token);
+  const storedHashedToken = await kvGet(env.DB, 'admin_session_token_hash');
+  return storedHashedToken && timingSafeEqual(hashedToken, storedHashedToken);
+}
+
+async function ensureTablesExist(env, ctx) {
+  if (!env.DB) return; // Skip if no D1
+  
+  const createTables = [
+    `CREATE TABLE IF NOT EXISTS users (
+      uuid TEXT PRIMARY KEY,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      expiration_date TEXT NOT NULL,
+      expiration_time TEXT NOT NULL,
+      notes TEXT,
+      traffic_limit INTEGER,
+      traffic_used INTEGER DEFAULT 0,
+      ip_limit INTEGER DEFAULT -1
+    )`,
+    `CREATE TABLE IF NOT EXISTS user_ips (
+      uuid TEXT,
+      ip TEXT,
+      last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (uuid, ip),
+      FOREIGN KEY (uuid) REFERENCES users(uuid) ON DELETE CASCADE
+    )`,
+    `CREATE TABLE IF NOT EXISTS key_value (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      expiration INTEGER
+    )`,
+    `CREATE TABLE IF NOT EXISTS proxy_health (
+      ip_port TEXT PRIMARY KEY,
+      is_healthy INTEGER NOT NULL,
+      latency_ms INTEGER,
+      last_check INTEGER DEFAULT (strftime('%s', 'now'))
+    )`
+  ];
+  
+  const stmts = createTables.map(sql => env.DB.prepare(sql));
   
   try {
-    const cookieHeader = request.headers.get('Cookie');
-    if (!cookieHeader) return false;
-
-    const token = cookieHeader.match(/auth_token=([^;]+)/)?.[1];
-    if (!token) return false;
-
-    const hashedToken = await hashSHA256(token);
-    const storedHashedToken = await kvGet(env.DB, 'admin_session_token_hash');
-    return storedHashedToken && timingSafeEqual(hashedToken, storedHashedToken);
+    await env.DB.batch(stmts);
+    console.log('D1 tables ensured/created successfully');
   } catch (e) {
-    console.error(`isAdmin check failed: ${e.message}`);
-    return false;
+    console.error('Failed to create D1 tables:', e);
+    // Don't throw - fail open
   }
 }
 
 async function handleAdminRequest(request, env, ctx, adminPrefix) {
-  // Ensure tables exist with error handling
-  const tablesExist = await ensureTablesExist(env, ctx);
-  
-  if (!tablesExist) {
-    const headers = new Headers({ 'Content-Type': 'text/html;charset=utf-8' });
-    addSecurityHeaders(headers, null, {});
-    return new Response('Database not available. Admin panel requires D1 database.', { status: 503, headers });
-  }
+  await ensureTablesExist(env, ctx);  // Ensure tables on admin access
   
   const url = new URL(request.url);
   const jsonHeader = { 'Content-Type': 'application/json' };
@@ -815,7 +1389,6 @@ async function handleAdminRequest(request, env, ctx, adminPrefix) {
     return new Response('Admin panel is not configured.', { status: 503, headers: htmlHeaders });
   }
 
-  // IP Whitelist / Scamalytics check with enhanced error handling
   if (env.ADMIN_IP_WHITELIST) {
     const allowedIps = env.ADMIN_IP_WHITELIST.split(',').map(ip => ip.trim());
     if (!allowedIps.includes(clientIp)) {
@@ -829,15 +1402,10 @@ async function handleAdminRequest(request, env, ctx, adminPrefix) {
       apiKey: env.SCAMALYTICS_API_KEY || Config.scamalytics.apiKey,
       baseUrl: env.SCAMALYTICS_BASEURL || Config.scamalytics.baseUrl,
     };
-    
-    try {
-      if (await isSuspiciousIP(clientIp, scamalyticsConfig, env.SCAMALYTICS_THRESHOLD || CONST.SCAMALYTICS_THRESHOLD)) {
-        console.warn(`Admin access denied for suspicious IP: ${clientIp}`);
-        addSecurityHeaders(htmlHeaders, null, {});
-        return new Response('Access denied.', { status: 403, headers: htmlHeaders });
-      }
-    } catch (e) {
-      console.error(`Scamalytics check failed: ${e.message} - Allowing access`);
+    if (await isSuspiciousIP(clientIp, scamalyticsConfig, env.SCAMALYTICS_THRESHOLD || CONST.SCAMALYTICS_THRESHOLD)) {
+      console.warn(`Admin access denied for suspicious IP: ${clientIp}`);
+      addSecurityHeaders(htmlHeaders, null, {});
+      return new Response('Access denied.', { status: 403, headers: htmlHeaders });
     }
   }
 
@@ -859,7 +1427,6 @@ async function handleAdminRequest(request, env, ctx, adminPrefix) {
 
   const adminSubPath = url.pathname.substring(adminBasePath.length) || '/';
 
-  // API Routes with enhanced error handling
   if (adminSubPath.startsWith('/api/')) {
     if (!(await isAdmin(request, env))) {
       const headers = new Headers(jsonHeader);
@@ -867,51 +1434,38 @@ async function handleAdminRequest(request, env, ctx, adminPrefix) {
       return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers });
     }
 
-    // Rate limiting for API
-    try {
-      const apiRateKey = `admin_api_rate:${clientIp}`;
-      if (await checkRateLimit(env.DB, apiRateKey, 100, 60)) {
-        const headers = new Headers(jsonHeader);
-        addSecurityHeaders(headers, null, {});
-        return new Response(JSON.stringify({ error: 'API rate limit exceeded' }), { status: 429, headers });
-      }
-    } catch (e) {
-      console.warn(`Rate limit check failed: ${e.message}`);
+    // Added rate limiting for API endpoints
+    const apiRateKey = `admin_api_rate:${clientIp}`;
+    if (await checkRateLimit(env.DB, apiRateKey, 100, 60)) { // 100 req/min
+      const headers = new Headers(jsonHeader);
+      addSecurityHeaders(headers, null, {});
+      return new Response(JSON.stringify({ error: 'API rate limit exceeded' }), { status: 429, headers });
     }
 
-    // CSRF validation for non-GET requests
     if (request.method !== 'GET') {
-      try {
-        const origin = request.headers.get('Origin');
-        const secFetch = request.headers.get('Sec-Fetch-Site');
+      const origin = request.headers.get('Origin');
+      const secFetch = request.headers.get('Sec-Fetch-Site');
 
-        if (!origin || new URL(origin).hostname !== url.hostname || secFetch !== 'same-origin') {
-          const headers = new Headers(jsonHeader);
-          addSecurityHeaders(headers, null, {});
-          return new Response(JSON.stringify({ error: 'Invalid Origin/Request' }), { status: 403, headers });
-        }
-
-        const csrfToken = request.headers.get('X-CSRF-Token');
-        const cookieCsrf = request.headers.get('Cookie')?.match(/csrf_token=([^;]+)/)?.[1];
-        if (!csrfToken || !cookieCsrf || !timingSafeEqual(csrfToken, cookieCsrf)) {
-          const headers = new Headers(jsonHeader);
-          addSecurityHeaders(headers, null, {});
-          return new Response(JSON.stringify({ error: 'CSRF validation failed' }), { status: 403, headers });
-        }
-      } catch (e) {
-        console.error(`CSRF validation error: ${e.message}`);
+      if (!origin || new URL(origin).hostname !== url.hostname || secFetch !== 'same-origin') {
         const headers = new Headers(jsonHeader);
         addSecurityHeaders(headers, null, {});
-        return new Response(JSON.stringify({ error: 'Security validation failed' }), { status: 403, headers });
+        return new Response(JSON.stringify({ error: 'Invalid Origin/Request' }), { status: 403, headers });
+      }
+
+      const csrfToken = request.headers.get('X-CSRF-Token');
+      const cookieCsrf = request.headers.get('Cookie')?.match(/csrf_token=([^;]+)/)?.[1];
+      if (!csrfToken || !cookieCsrf || !timingSafeEqual(csrfToken, cookieCsrf)) {
+        const headers = new Headers(jsonHeader);
+        addSecurityHeaders(headers, null, {});
+        return new Response(JSON.stringify({ error: 'CSRF validation failed' }), { status: 403, headers });
       }
     }
     
-    // Stats endpoint
     if (adminSubPath === '/api/stats' && request.method === 'GET') {
       const headers = new Headers(jsonHeader);
       addSecurityHeaders(headers, null, {});
       try {
-        const totalUsers = await env.DB.prepare("SELECT COUNT(*) as count FROM users").first('count') || 0;
+        const totalUsers = await env.DB.prepare("SELECT COUNT(*) as count FROM users").first('count');
         const expiredQuery = await env.DB.prepare("SELECT COUNT(*) as count FROM users WHERE datetime(expiration_date || 'T' || expiration_time || 'Z') < datetime('now')").first();
         const expiredUsers = expiredQuery?.count || 0;
         const activeUsers = totalUsers - expiredUsers;
@@ -924,12 +1478,10 @@ async function handleAdminRequest(request, env, ctx, adminPrefix) {
           total_traffic: totalTraffic 
         }), { status: 200, headers });
       } catch (e) {
-        console.error(`Stats API error: ${e.message}`);
         return new Response(JSON.stringify({ error: e.message }), { status: 500, headers });
       }
     }
 
-    // Users list endpoint
     if (adminSubPath === '/api/users' && request.method === 'GET') {
       const headers = new Headers(jsonHeader);
       addSecurityHeaders(headers, null, {});
@@ -937,12 +1489,10 @@ async function handleAdminRequest(request, env, ctx, adminPrefix) {
         const { results } = await env.DB.prepare("SELECT uuid, created_at, expiration_date, expiration_time, notes, traffic_limit, traffic_used, ip_limit FROM users ORDER BY created_at DESC").all();
         return new Response(JSON.stringify(results ?? []), { status: 200, headers });
       } catch (e) {
-        console.error(`Users list API error: ${e.message}`);
         return new Response(JSON.stringify({ error: e.message }), { status: 500, headers });
       }
     }
 
-    // Create user endpoint
     if (adminSubPath === '/api/users' && request.method === 'POST') {
       const headers = new Headers(jsonHeader);
       addSecurityHeaders(headers, null, {});
@@ -968,7 +1518,6 @@ async function handleAdminRequest(request, env, ctx, adminPrefix) {
 
         return new Response(JSON.stringify({ success: true, uuid }), { status: 201, headers });
       } catch (error) {
-        console.error(`Create user API error: ${error.message}`);
         if (error.message?.includes('UNIQUE constraint failed')) {
           return new Response(JSON.stringify({ error: 'A user with this UUID already exists.' }), { status: 409, headers });
         }
@@ -976,7 +1525,6 @@ async function handleAdminRequest(request, env, ctx, adminPrefix) {
       }
     }
 
-    // Bulk delete endpoint
     if (adminSubPath === '/api/users/bulk-delete' && request.method === 'POST') {
       const headers = new Headers(jsonHeader);
       addSecurityHeaders(headers, null, {});
@@ -994,12 +1542,10 @@ async function handleAdminRequest(request, env, ctx, adminPrefix) {
 
         return new Response(JSON.stringify({ success: true, count: uuids.length }), { status: 200, headers });
       } catch (error) {
-        console.error(`Bulk delete API error: ${error.message}`);
         return new Response(JSON.stringify({ error: error.message }), { status: 400, headers });
       }
     }
 
-    // Individual user operations
     const userRouteMatch = adminSubPath.match(/^\/api\/users\/([a-f0-9-]+)$/);
 
     if (userRouteMatch && request.method === 'PUT') {
@@ -1028,7 +1574,6 @@ async function handleAdminRequest(request, env, ctx, adminPrefix) {
 
         return new Response(JSON.stringify({ success: true, uuid }), { status: 200, headers });
       } catch (error) {
-        console.error(`Update user API error: ${error.message}`);
         return new Response(JSON.stringify({ error: error.message }), { status: 400, headers });
       }
     }
@@ -1042,12 +1587,10 @@ async function handleAdminRequest(request, env, ctx, adminPrefix) {
         ctx.waitUntil(kvDelete(env.DB, `user:${uuid}`));
         return new Response(JSON.stringify({ success: true, uuid }), { status: 200, headers });
       } catch (error) {
-        console.error(`Delete user API error: ${error.message}`);
         return new Response(JSON.stringify({ error: error.message }), { status: 500, headers });
       }
     }
 
-    // Logout endpoint
     if (adminSubPath === '/api/logout' && request.method === 'POST') {
       const headers = new Headers(jsonHeader);
       addSecurityHeaders(headers, null, {});
@@ -1061,12 +1604,10 @@ async function handleAdminRequest(request, env, ctx, adminPrefix) {
         headers.append('Set-Cookie', setCookie[1]);
         return new Response(JSON.stringify({ success: true }), { status: 200, headers });
       } catch (error) {
-        console.error(`Logout API error: ${error.message}`);
         return new Response(JSON.stringify({ error: error.message }), { status: 500, headers });
       }
     }
 
-    // Health check endpoint
     if (adminSubPath === '/api/health-check' && request.method === 'POST') {
       const headers = new Headers(jsonHeader);
       addSecurityHeaders(headers, null, {});
@@ -1074,7 +1615,6 @@ async function handleAdminRequest(request, env, ctx, adminPrefix) {
         await performHealthCheck(env, ctx);
         return new Response(JSON.stringify({ success: true }), { status: 200, headers });
       } catch (error) {
-        console.error(`Health check API error: ${error.message}`);
         return new Response(JSON.stringify({ error: error.message }), { status: 500, headers });
       }
     }
@@ -1084,7 +1624,6 @@ async function handleAdminRequest(request, env, ctx, adminPrefix) {
     return new Response(JSON.stringify({ error: 'API route not found' }), { status: 404, headers });
   }
 
-  // Login page handling
   if (adminSubPath === '/') {
     
     if (request.method === 'POST') {
@@ -1113,7 +1652,6 @@ async function handleAdminRequest(request, env, ctx, adminPrefix) {
               return new Response(html, { status: 401, headers: htmlHeaders });
             }
           }
-          
           const token = crypto.randomUUID();
           const csrfToken = crypto.randomUUID();
           const hashedToken = await hashSHA256(token);
@@ -1155,8 +1693,7 @@ async function handleAdminRequest(request, env, ctx, adminPrefix) {
       
       let html;
       if (await isAdmin(request, env)) {
-        // Return full admin panel HTML - copy from your original code
-        html = "<!-- INSERT FULL adminPanelHTML HERE -->";
+        html = adminPanelHTML;
         html = html.replace("'ADMIN_API_BASE_PATH_PLACEHOLDER'", `'${adminBasePath}/api'`);
       } else {
         html = adminLoginHTML;
@@ -1178,37 +1715,1624 @@ async function handleAdminRequest(request, env, ctx, adminPrefix) {
 }
 
 // ============================================================================
-// USER PANEL - PRESERVED WITH ENHANCED ERROR HANDLING
+// USER PANEL - UNIVERSAL QR CODE WITH MULTIPLE FALLBACK METHODS (with auto-refresh enhancements)
 // ============================================================================
 
-// Copy full handleUserPanel function from your original code (lines ~1300-1800)
-// For brevity, referencing it exists - in deployment, include complete function
+async function resolveProxyIP(proxyHost) {
+  const ipv4Regex = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+  const ipv6Regex = /^\[?[0-9a-fA-F:]+\]?$/;
+
+  if (ipv4Regex.test(proxyHost) || ipv6Regex.test(proxyHost)) {
+    return proxyHost;
+  }
+
+  const dnsAPIs = [
+    { url: `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(proxyHost)}&type=A`, parse: data => data.Answer?.find(a => a.type === 1)?.data },
+    { url: `https://dns.google/resolve?name=${encodeURIComponent(proxyHost)}&type=A`, parse: data => data.Answer?.find(a => a.type === 1)?.data },
+    { url: `https://1.1.1.1/dns-query?name=${encodeURIComponent(proxyHost)}&type=A`, parse: data => data.Answer?.find(a => a.type === 1)?.data }
+  ];
+
+  for (const api of dnsAPIs) {
+    try {
+      const response = await fetch(api.url, { headers: { 'accept': 'application/dns-json' } });
+      if (response.ok) {
+        const data = await response.json();
+        const ip = api.parse(data);
+        if (ip && ipv4Regex.test(ip)) return ip;
+      }
+    } catch (e) {
+      // Silent fail
+    }
+  }
+  return proxyHost; // Fallback to host if resolution fails
+}
+
+async function getGeo(ip) {
+  const geoAPIs = [
+    { url: `https://ipapi.co/${ip}/json/`, parse: data => ({ city: data.city || '', country: data.country_name || '', isp: data.org || '' }) },
+    { url: `https://ip-api.com/json/${ip}?fields=status,message,city,country,isp`, parse: data => data.status !== 'fail' ? ({ city: data.city || '', country: data.country || '', isp: data.isp || '' }) : null },
+    { url: `https://ipwho.is/${ip}`, parse: data => data.success ? ({ city: data.city || '', country: data.country || '', isp: data.connection?.isp || '' }) : null },
+    { url: `https://freegeoip.app/json/${ip}`, parse: data => ({ city: data.city || '', country: data.country_name || '', isp: '' }) },
+    { url: `https://ipapi.is/${ip}.json`, parse: data => ({ city: data.location?.city || '', country: data.location?.country || '', isp: data.asn?.org || '' }) },
+    { url: `https://freeipapi.com/api/json/${ip}`, parse: data => ({ city: data.cityName || '', country: data.countryName || '', isp: '' }) }
+  ];
+
+  for (const api of geoAPIs) {
+    try {
+      const response = await fetch(api.url);
+      if (response.ok) {
+        const data = await response.json();
+        const geo = api.parse(data);
+        if (geo && (geo.city || geo.country)) return geo;
+      }
+    } catch (e) {
+      // Silent fail
+    }
+  }
+  return null;
+}
+
+async function handleUserPanel(request, userID, hostName, proxyAddress, userData, clientIp) {
+  const subXrayUrl = `https://${hostName}/xray/${userID}`;
+  const subSbUrl = `https://${hostName}/sb/${userID}`;
+  
+  const singleXrayConfig = buildLink({ core:'xray', proto: 'tls', userID, hostName, address: hostName, port: 443, tag: 'Main'  });
+  
+  const singleSingboxConfig = buildLink({ core: 'sb', proto: 'tls', userID, hostName, address: hostName, port: 443, tag: 'Main' });
+
+  const clientUrls = {
+    universalAndroid: `v2rayng://install-config?url=${encodeURIComponent(subXrayUrl)}`,
+    windows: `clash://install-config?url=${encodeURIComponent(subSbUrl)}`,
+    macos: `clash://install-config?url=${encodeURIComponent(subSbUrl)}`,
+    karing: `karing://install-config?url=${encodeURIComponent(subXrayUrl)}`,
+    shadowrocket: `shadowrocket://add/sub?url=${encodeURIComponent(subXrayUrl)}&name=${encodeURIComponent(hostName)}`,
+    streisand: `streisand://install-config?url=${encodeURIComponent(subXrayUrl)}`
+  };
+
+  const isUserExpired = isExpired(userData.expiration_date, userData.expiration_time);
+  const expirationDateTime = userData.expiration_date && userData.expiration_time 
+    ? `${userData.expiration_date}T${userData.expiration_time}Z` 
+    : null;
+
+  let usagePercentage = 0;
+  if (userData.traffic_limit && userData.traffic_limit > 0) {
+    usagePercentage = Math.min(((userData.traffic_used || 0) / userData.traffic_limit) * 100, 100);
+  }
+
+  let usagePercentageDisplay;
+  if (usagePercentage > 0 && usagePercentage < 0.01) {
+    usagePercentageDisplay = '< 0.01%';
+  } else if (usagePercentage === 0) {
+    usagePercentageDisplay = '0%';
+  } else if (usagePercentage === 100) {
+    usagePercentageDisplay = '100%';
+  } else {
+    usagePercentageDisplay = `${usagePercentage.toFixed(2)}%`;
+  }
+
+  // Server-side geo detection with Cloudflare CF
+  const requestCf = request.cf || {};
+  const clientGeo = {
+    city: requestCf.city || '',
+    country: requestCf.country || '',
+    isp: requestCf.asOrganization || ''
+  };
+  const clientLocation = [clientGeo.city, clientGeo.country].filter(Boolean).join(', ') || 'Detection failed';
+  const clientIsp = clientGeo.isp || 'Detection failed';
+
+  const proxyHost = proxyAddress.split(':')[0];
+  const proxyIP = await resolveProxyIP(proxyHost);
+  const proxyGeo = await getGeo(proxyIP);
+  const proxyLocation = [proxyGeo.city, proxyGeo.country].filter(Boolean).join(', ') || 'Detection failed';
+
+  // Pre-compute async values
+  const usageDisplay = await formatBytes(userData.traffic_used || 0);
+  let trafficLimitStr = 'Unlimited';
+  if (userData.traffic_limit && userData.traffic_limit > 0) {
+    trafficLimitStr = await formatBytes(userData.traffic_limit);
+  }
+  const createdDate = new Date(userData.created_at).toLocaleDateString();
+
+  // Conditional HTML blocks as strings
+  let trafficSection = '';
+  if (userData.traffic_limit && userData.traffic_limit > 0) {
+    const usage = await formatBytes(userData.traffic_used || 0);
+    const limit = await formatBytes(userData.traffic_limit);
+    const progressClass = usagePercentage > 80 ? 'high' : usagePercentage > 50 ? 'medium' : 'low';
+    trafficSection = `
+    <div class="card">
+      <div class="section-title">
+        <h2>📊 Usage Statistics</h2>
+        <span class="muted">${usagePercentageDisplay} Used</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill ${progressClass}" 
+             id="progress-bar-fill"
+             data-target-width="${usagePercentage.toFixed(2)}"></div>
+      </div>
+      <p class="muted text-center mb-2">${usage} of ${limit} used</p>
+    </div>
+    `;
+  }
+
+  let expirationSection = '';
+  if (expirationDateTime) {
+    const expiryWarning = isUserExpired ? `
+      <div class="expiry-warning">
+        ⚠️ Your account has expired. Please contact your administrator to renew access.
+      </div>
+    ` : `
+      <div class="expiry-info">
+        ✓ Your account is currently active and working normally.
+      </div>
+    `;
+    expirationSection = `
+    <div class="card">
+      <div class="section-title">
+        <h2>⏰ Expiration Information</h2>
+      </div>
+      <div id="expiration-display" data-expiry="${expirationDateTime}">
+        <p class="muted" id="expiry-local">Loading expiration time...</p>
+        <p class="muted expiry-utc" id="expiry-utc"></p>
+      </div>
+      ${expiryWarning}
+    </div>
+    `;
+  }
+
+  let notesSection = '';
+  if (userData.notes) {
+    notesSection = `
+          <div class="info-item mt-12">
+            <span class="label">Notes</span>
+            <span class="value">${escapeHTML(userData.notes)}</span>
+          </div>
+    `;
+  }
+
+  const userPanelHTML = `
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>User Panel — VLESS Configuration</title>
+  <style nonce="CSP_NONCE_PLACEHOLDER">
+    :root{
+      --bg:#0b1220; --card:#0f1724; --muted:#9aa4b2; --accent:#3b82f6;
+      --accent-2:#60a5fa; --success:#22c55e; --danger:#ef4444; --warning:#f59e0b;
+      --glass: rgba(255,255,255,0.03); --radius:12px; --mono: "SF Mono", "Fira Code", monospace;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      background: linear-gradient(180deg,#061021 0%, #071323 100%);
+      color:#e6eef8; -webkit-font-smoothing:antialiased;
+      min-height:100vh; padding:28px;
+    }
+    .container{max-width:1100px;margin:0 auto}
+    .card{background:var(--card); border-radius:var(--radius); padding:20px;
+      border:1px solid rgba(255,255,255,0.03); box-shadow:0 8px 30px rgba(2,6,23,0.5); margin-bottom:20px;}
+    h1,h2{margin:0 0 14px;font-weight:600}
+    h1{font-size:28px}
+    h2{font-size:20px}
+    p.lead{color:var(--muted);margin:6px 0 20px;font-size:15px}
+
+    .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:10px}
+    .stat{padding:14px;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);
+      border-radius:10px;text-align:center;border:1px solid rgba(255,255,255,0.02)}
+    .stat .val{font-weight:700;font-size:22px;margin-bottom:4px}
+    .stat .lbl{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:0.5px}
+    .stat.status-active .val{color:var(--success)}
+    .stat.status-expired .val{color:var(--danger)}
+    .stat.status-warning .val{color:var(--warning)}
+
+    .grid{display:grid;grid-template-columns:1fr 360px;gap:18px}
+    @media (max-width:980px){ .grid{grid-template-columns:1fr} }
+
+    .info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-top:16px}
+    .info-item{background:var(--glass);padding:14px;border-radius:10px;border:1px solid rgba(255,255,255,0.02)}
+    .info-item .label{font-size:11px;color:var(--muted);display:block;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px}
+    .info-item .value{font-weight:600;word-break:break-all;font-size:14px}
+    .info-item .value.detecting{color:var(--warning);font-style:italic}
+
+    .progress-bar{height:12px;background:#071529;border-radius:6px;overflow:hidden;margin:12px 0}
+    .progress-fill{
+      height:100%;
+      transition:width 0.6s ease;
+      border-radius:6px;
+      width:0%;
+    }
+    .progress-fill.low{background:linear-gradient(90deg,#22c55e,#16a34a)}
+    .progress-fill.medium{background:linear-gradient(90deg,#f59e0b,#d97706)}
+    .progress-fill.high{background:linear-gradient(90deg,#ef4444,#dc2626)}
+
+    pre.config{background:#071529;padding:14px;border-radius:8px;overflow:auto;
+      font-family:var(--mono);font-size:13px;color:#cfe8ff;
+      border:1px solid rgba(255,255,255,0.02);max-height:200px}
+    .buttons{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+
+    .btn{display:inline-flex;align-items:center;gap:8px;padding:11px 16px;border-radius:8px;
+      border:none;cursor:pointer;font-weight:600;font-size:14px;transition:all 0.2s;
+      text-decoration:none;color:inherit}
+    .btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#fff;box-shadow:0 4px 12px rgba(59,130,246,0.3)}
+    .btn.primary:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(59,130,246,0.4)}
+    .btn.ghost{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);color:var(--muted)}
+    .btn.ghost:hover{background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.12);color:#fff}
+    .btn.small{padding:8px 12px;font-size:13px}
+    .btn:active{transform:translateY(0) scale(0.98)}
+    .btn:disabled{opacity:0.5;cursor:not-allowed}
+
+    .qr-container{background:#fff;padding:16px;border-radius:10px;display:inline-block;box-shadow:0 4px 12px rgba(0,0,0,0.2);margin:16px auto;text-align:center}
+    #qr-display{min-height:280px;display:flex;align-items:center;justify-content:center;flex-direction:column}
+
+    #toast{position:fixed;right:20px;top:20px;background:#0f1b2a;padding:14px 18px;
+      border-radius:10px;border:1px solid rgba(255,255,255,0.08);display:none;
+      color:#cfe8ff;box-shadow:0 8px 24px rgba(2,6,23,0.7);z-index:1000;min-width:200px}
+    #toast.show{display:block;animation:toastIn .3s ease}
+    #toast.success{border-left:4px solid var(--success)}
+    #toast.error{border-left:4px solid var(--danger)}
+    @keyframes toastIn{from{transform:translateY(-10px);opacity:0}to{transform:translateY(0);opacity:1}}
+
+    .section-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;
+      padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.05)}
+    .muted{color:var(--muted);font-size:14px;line-height:1.6}
+    .stack{display:flex;flex-direction:column;gap:10px}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .hidden{display:none}
+    .text-center{text-align:center}
+    .mb-2{margin-bottom:12px}
+    
+    .expiry-warning{background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);
+      padding:12px;border-radius:8px;margin-top:12px;color:#fca5a5}
+    .expiry-info{background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.3);
+      padding:12px;border-radius:8px;margin-top:12px;color:#86efac}
+
+    @media (max-width: 768px) {
+      body{padding:16px}
+      .container{padding:0}
+      h1{font-size:24px}
+      .stats{grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+      .info-grid{grid-template-columns:1fr}
+      .btn{padding:9px 12px;font-size:13px}
+    }
+    /* New classes for migrated inline styles */
+    .sub-title { font-size:16px; margin:12px 0 8px; color:var(--accent-2); }
+    .qr-buttons { justify-content:center; margin-top:16px; }
+    .mt-12 { margin-top:12px; }
+    .uuid-value { font-family:var(--mono); font-size:12px; word-break:break-all; }
+    .expiry-utc { font-size:13px; margin-top:4px; }
+    .no-margin { margin:0; }
+    .progress-fill-initial { width: 0%; }
+    .absolute-top-right { position: absolute; top: 20px; right: 20px; }
+    .absolute-top-right-offset { position: absolute; top: 20px; right: 120px; }
+    .mt-30 { margin-top: 30px; }
+    .mb-16 { margin-bottom: 16px; }
+    .grid-column-full { grid-column: 1 / -1; }
+    .checkbox-inline { width: auto; margin-right: 8px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🚀 VXR.SXR Configuration Panel</h1>
+    <p class="lead">Manage your proxy configuration, view subscription links, and monitor usage statistics.</p>
+
+    <div class="stats">
+      <div class="stat ${isUserExpired ? 'status-expired' : 'status-active'}">
+        <div class="val" id="status-badge">${isUserExpired ? 'Expired' : 'Active'}</div>
+        <div class="lbl">Account Status</div>
+      </div>
+      <div class="stat">
+        <div class="val" id="usage-display">${usageDisplay}</div>
+        <div class="lbl">Data Used</div>
+      </div>
+      <div class="stat ${usagePercentage > 80 ? 'status-warning' : ''}">
+        <div class="val">${trafficLimitStr}</div>
+        <div class="lbl">Data Limit</div>
+      </div>
+      <div class="stat">
+        <div class="val" id="expiry-countdown">—</div>
+        <div class="lbl">Time Remaining</div>
+      </div>
+    </div>
+
+    ${trafficSection}
+
+    ${expirationSection}
+
+    <div class="grid">
+      <div>
+        <div class="card">
+          <div class="section-title">
+            <h2>🌐 Network Information</h2>
+            <button class="btn ghost small" id="btn-refresh-ip">Refresh</button>
+          </div>
+          <p class="muted">Connection details and IP information for your proxy server and current location.</p>
+          <div class="info-grid">
+            <div class="info-item">
+              <span class="label">Proxy Host</span>
+              <span class="value" id="proxy-host">${proxyAddress || hostName}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Proxy IP</span>
+              <span class="value" id="proxy-ip">${proxyIP || 'Detection failed'}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Proxy Location</span>
+              <span class="value" id="proxy-location">${proxyLocation || 'Detection failed'}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Your IP</span>
+              <span class="value" id="client-ip">${clientIp || 'Detection failed'}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Your Location</span>
+              <span class="value" id="client-location">${clientLocation || 'Detection failed'}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Your ISP</span>
+              <span class="value" id="client-isp">${clientIsp || 'Detection failed'}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="section-title">
+            <h2>📱 Subscription Links</h2>
+          </div>
+          <p class="muted">Copy subscription URLs or import directly into your VPN client application.</p>
+
+          <div class="stack">
+            <div>
+              <h3 class="sub-title">Xray / V2Ray Subscription</h3>
+              <div class="buttons">
+                <button class="btn primary" id="copy-xray-sub">📋 Copy Xray Link</button>
+                <button class="btn ghost" id="show-xray-config">View Config</button>
+                <button class="btn ghost" id="qr-xray-sub-btn">QR Code</button>
+              </div>
+              <pre class="config hidden" id="xray-config">${escapeHTML(singleXrayConfig)}</pre>
+            </div>
+
+            <div>
+              <h3 class="sub-title">Sing-Box / Clash Subscription</h3>
+              <div class="buttons">
+                <button class="btn primary" id="copy-sb-sub">📋 Copy Singbox Link</button>
+                <button class="btn ghost" id="show-sb-config">View Config</button>
+                <button class="btn ghost" id="qr-sb-sub-btn">QR Code</button>
+              </div>
+              <pre class="config hidden" id="sb-config">${escapeHTML(singleSingboxConfig)}</pre>
+            </div>
+
+            <div>
+              <h3 class="sub-title">Quick Import</h3>
+              <div class="buttons">
+                <a href="${clientUrls.universalAndroid}" rel="noopener noreferrer" class="btn ghost">📱 Android (V2rayNG)</a>
+                <a href="${clientUrls.shadowrocket}" rel="noopener noreferrer" class="btn ghost">🍎 iOS (Shadowrocket)</a>
+                <a href="${clientUrls.streisand}" rel="noopener noreferrer" class="btn ghost">🍎 iOS Streisand</a>
+                <a href="${clientUrls.karing}" rel="noopener noreferrer" class="btn ghost">🔧 Android/iOS Karing</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <aside>
+        <div class="card">
+          <h2>QR Code Scanner</h2>
+          <p class="muted mb-2">Scan with your mobile device to quickly import configuration.</p>
+          <div id="qr-display" class="text-center">
+            <p class="muted">Click any "QR Code" button to generate a scannable code.</p>
+          </div>
+          <div class="buttons qr-buttons">
+            <button class="btn ghost small" id="qr-xray-config-btn">Xray Config QR</button>
+            <button class="btn ghost small" id="qr-sb-config-btn">Singbox Config QR</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>👤 Account Details</h2>
+          <div class="info-item mt-12">
+            <span class="label">User UUID</span>
+            <span class="value uuid-value">${userID}</span>
+          </div>
+          <div class="info-item mt-12">
+            <span class="label">Created Date</span>
+            <span class="value">${createdDate}</span>
+          </div>
+          ${notesSection}
+          <div class="info-item mt-12">
+            <span class="label">IP Limit</span>
+            <span class="value">${userData.ip_limit === -1 ? 'Unlimited' : userData.ip_limit}</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>💾 Export Configuration</h2>
+          <p class="muted mb-2">Download configuration file for manual import or backup purposes.</p>
+          <div class="buttons">
+            <button class="btn primary small" id="download-xray">Download Xray</button>
+            <button class="btn primary small" id="download-sb">Download Singbox</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <div class="card">
+      <p class="muted text-center no-margin">
+        🔒 This is your personal configuration panel. Keep your subscription links private and secure.
+        <br>For support or questions, contact your service administrator.
+      </p>
+    </div>
+
+    <div id="toast"></div>
+  </div>
+
+  <script nonce="CSP_NONCE_PLACEHOLDER">
+    window.CONFIG = {
+      uuid: "${userID}",
+      host: "${hostName}",
+      proxyAddress: "${proxyAddress || hostName}",
+      subXrayUrl: "${subXrayUrl}",
+      subSbUrl: "${subSbUrl}",
+      singleXrayConfig: ${JSON.stringify(singleXrayConfig)},
+      singleSingboxConfig: ${JSON.stringify(singleSingboxConfig)},
+      expirationDateTime: ${expirationDateTime ? `"${expirationDateTime}"` : 'null'},
+      isExpired: ${isUserExpired},
+      clientUrls: ${JSON.stringify(clientUrls)},
+      trafficLimit: ${userData.traffic_limit || 'null'},
+      initialTrafficUsed: ${userData.traffic_used || 0}
+    };
+    
+    window.CLIENT_GEO = ${JSON.stringify(clientGeo)};
+    window.PROXY_GEO = ${JSON.stringify(proxyGeo)};
+    window.PROXY_IP = "${proxyIP}";
+    window.CLIENT_IP = "${clientIp}";
+    
+    async function formatBytes(bytes) {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+    
+    // =========================================
+    // SELF-CONTAINED QR CODE GENERATOR
+    // Pure JavaScript - No external dependencies
+    // =========================================
+    
+    const QRCodeGenerator = (function() {
+      const QRErrorCorrectLevel = { L: 1, M: 0, Q: 3, H: 2 };
+      
+      function QRMath() {}
+      
+      QRMath.glog = function(n) {
+        if (n < 1) throw new Error("glog(" + n + ")");
+        return QRMath.LOG_TABLE[n];
+      };
+      
+      QRMath.gexp = function(n) {
+        while (n < 0) n += 255;
+        while (n >= 256) n -= 255;
+        return QRMath.EXP_TABLE[n];
+      };
+      
+      QRMath.EXP_TABLE = new Array(256);
+      QRMath.LOG_TABLE = new Array(256);
+      
+      for (let i = 0; i < 8; i++) {
+        QRMath.EXP_TABLE[i] = 1 << i;
+      }
+      for (let i = 8; i < 256; i++) {
+        QRMath.EXP_TABLE[i] = QRMath.EXP_TABLE[i - 4] ^
+                              QRMath.EXP_TABLE[i - 5] ^
+                              QRMath.EXP_TABLE[i - 6] ^
+                              QRMath.EXP_TABLE[i - 8];
+      }
+      for (let i = 0; i < 255; i++) {
+        QRMath.LOG_TABLE[QRMath.EXP_TABLE[i]] = i;
+      }
+      
+      function QRPolynomial(num, shift) {
+        if (num.length === undefined) throw new Error("QRPolynomial: invalid num");
+        let offset = 0;
+        while (offset < num.length && num[offset] === 0) offset++;
+        this.num = new Array(num.length - offset + shift);
+        for (let i = 0; i < num.length - offset; i++) {
+          this.num[i] = num[i + offset];
+        }
+      }
+      
+      QRPolynomial.prototype = {
+        get: function(index) { return this.num[index]; },
+        getLength: function() { return this.num.length; },
+        multiply: function(e) {
+          const num = new Array(this.getLength() + e.getLength() - 1);
+          for (let i = 0; i < this.getLength(); i++) {
+            for (let j = 0; j < e.getLength(); j++) {
+              num[i + j] ^= QRMath.gexp(QRMath.glog(this.get(i)) + QRMath.glog(e.get(j)));
+            }
+          }
+          return new QRPolynomial(num, 0);
+        },
+        mod: function(e) {
+          if (this.getLength() - e.getLength() < 0) return this;
+          const ratio = QRMath.glog(this.get(0)) - QRMath.glog(e.get(0));
+          const num = new Array(this.getLength());
+          for (let i = 0; i < this.getLength(); i++) {
+            num[i] = this.get(i);
+          }
+          for (let i = 0; i < e.getLength(); i++) {
+            num[i] ^= QRMath.gexp(QRMath.glog(e.get(i)) + ratio);
+          }
+          return new QRPolynomial(num, 0).mod(e);
+        }
+      };
+      
+      function QRCode(typeNumber, errorCorrectLevel) {
+        this.typeNumber = typeNumber;
+        this.errorCorrectLevel = errorCorrectLevel;
+        this.modules = null;
+        this.moduleCount = 0;
+        this.dataCache = null;
+        this.dataList = [];
+      }
+      
+      QRCode.prototype = {
+        addData: function(data) {
+          this.dataList.push({ data: data, mode: 4 });
+          this.dataCache = null;
+        },
+        make: function() {
+          this.makeImpl(false, this.getBestMaskPattern());
+        },
+        makeImpl: function(test, maskPattern) {
+          this.moduleCount = this.typeNumber * 4 + 17;
+          this.modules = new Array(this.moduleCount);
+          for (let row = 0; row < this.moduleCount; row++) {
+            this.modules[row] = new Array(this.moduleCount);
+          }
+          this.setupPositionProbePattern(0, 0);
+          this.setupPositionProbePattern(this.moduleCount - 7, 0);
+          this.setupPositionProbePattern(0, this.moduleCount - 7);
+          this.setupPositionAdjustPattern();
+          this.setupTimingPattern();
+          this.setupTypeInfo(test, maskPattern);
+          if (this.typeNumber >= 7) this.setupTypeNumber(test);
+          if (this.dataCache === null) {
+            this.dataCache = QRCode.createData(this.typeNumber, this.errorCorrectLevel, this.dataList);
+          }
+          this.mapData(this.dataCache, maskPattern);
+        },
+        setupPositionProbePattern: function(row, col) {
+          for (let r = -1; r <= 7; r++) {
+            if (row + r <= -1 || this.moduleCount <= row + r) continue;
+            for (let c = -1; c <= 7; c++) {
+              if (col + c <= -1 || this.moduleCount <= col + c) continue;
+              this.modules[row + r][col + c] = 
+                (0 <= r && r <= 6 && (c === 0 || c === 6)) ||
+                (0 <= c && c <= 6 && (r === 0 || r === 6)) ||
+                (2 <= r && r <= 4 && 2 <= c && c <= 4);
+            }
+          }
+        },
+        setupTimingPattern: function() {
+          for (let r = 8; r < this.moduleCount - 8; r++) {
+            if (this.modules[r][6] !== null) continue;
+            this.modules[r][6] = r % 2 === 0;
+          }
+          for (let c = 8; c < this.moduleCount - 8; c++) {
+            if (this.modules[6][c] !== null) continue;
+            this.modules[6][c] = c % 2 === 0;
+          }
+        },
+        setupPositionAdjustPattern: function() {
+          const pos = [6, 18, 26, 34, 42, 50, 58, 66, 74, 82][this.typeNumber - 1] || [];
+          for (let i = 0; i < pos.length; i++) {
+            for (let j = 0; j < pos.length; j++) {
+              const row = pos[i], col = pos[j];
+              if (this.modules[row][col] !== null) continue;
+              for (let r = -2; r <= 2; r++) {
+                for (let c = -2; c <= 2; c++) {
+                  this.modules[row + r][col + c] = r === -2 || r === 2 || c === -2 || c === 2 || (r === 0 && c === 0);
+                }
+              }
+            }
+          }
+        },
+        setupTypeNumber: function(test) {
+          const bits = this.typeNumber << 12;
+          let mod = bits;
+          for (let i = 0; i < 12; i++) {
+            if ((mod >>> (11 - i)) & 1) mod ^= 7973 << (11 - i);
+          }
+          const data = (bits | mod) ^ 21522;
+          for (let i = 0; i < 18; i++) {
+            this.modules[Math.floor(i / 3)][i % 3 + this.moduleCount - 8 - 3] = !test && ((data >>> i) & 1) === 1;
+          }
+        },
+        setupTypeInfo: function(test, maskPattern) {
+          const data = (this.errorCorrectLevel << 3) | maskPattern;
+          let bits = data << 10;
+          for (let i = 0; i < 10; i++) {
+            if ((bits >>> (9 - i)) & 1) bits ^= 1335 << (9 - i);
+          }
+          bits = ((data << 10) | bits) ^ 21522;
+          for (let i = 0; i < 15; i++) {
+            const mod = !test && ((bits >>> i) & 1) === 1;
+            if (i < 6) {
+              this.modules[i][8] = mod;
+            } else if (i < 8) {
+              this.modules[i + 1][8] = mod;
+            } else {
+              this.modules[this.moduleCount - 15 + i][8] = mod;
+            }
+          }
+          for (let i = 0; i < 15; i++) {
+            const mod = !test && ((bits >>> i) & 1) === 1;
+            if (i < 8) {
+              this.modules[8][this.moduleCount - i - 1] = mod;
+            } else if (i < 9) {
+              this.modules[8][15 - i] = mod;
+            } else {
+              this.modules[8][14 - i] = mod;
+            }
+          }
+          this.modules[this.moduleCount - 8][8] = !test;
+        },
+        mapData: function(data, maskPattern) {
+          let inc = -1, row = this.moduleCount - 1, bitIndex = 7, byteIndex = 0;
+          for (let col = this.moduleCount - 1; col > 0; col -= 2) {
+            if (col === 6) col--;
+            while (true) {
+              for (let c = 0; c < 2; c++) {
+                if (this.modules[row][col - c] === null) {
+                  let dark = false;
+                  if (byteIndex < data.length) dark = ((data[byteIndex] >>> bitIndex) & 1) === 1;
+                  if (this.getMask(maskPattern, row, col - c)) dark = !dark;
+                  this.modules[row][col - c] = dark;
+                  bitIndex--;
+                  if (bitIndex === -1) { byteIndex++; bitIndex = 7; }
+                }
+              }
+              row += inc;
+              if (row < 0 || this.moduleCount <= row) {
+                row -= inc;
+                inc = -inc;
+                break;
+              }
+            }
+          }
+        },
+        getMask: function(maskPattern, i, j) {
+          switch (maskPattern) {
+            case 0: return (i + j) % 2 === 0;
+            case 1: return i % 2 === 0;
+            case 2: return j % 3 === 0;
+            case 3: return (i + j) % 3 === 0;
+            case 4: return (Math.floor(i / 2) + Math.floor(j / 3)) % 2 === 0;
+            case 5: return ((i * j) % 2) + ((i * j) % 3) === 0;
+            case 6: return (((i * j) % 2) + ((i * j) % 3)) % 2 === 0;
+            case 7: return (((i + j) % 2) + ((i * j) % 3)) % 2 === 0;
+            default: throw new Error("bad maskPattern:" + maskPattern);
+          }
+        },
+        getBestMaskPattern: function() {
+          let minLostPoint = 0, pattern = 0;
+          for (let i = 0; i < 8; i++) {
+            this.makeImpl(true, i);
+            const lostPoint = this.getLostPoint();
+            if (i === 0 || minLostPoint > lostPoint) {
+              minLostPoint = lostPoint;
+              pattern = i;
+            }
+          }
+          return pattern;
+        },
+        getLostPoint: function() {
+          let lostPoint = 0;
+          for (let row = 0; row < this.moduleCount; row++) {
+            for (let col = 0; col < this.moduleCount; col++) {
+              let sameCount = 0;
+              const dark = this.modules[row][col];
+              for (let r = -1; r <= 1; r++) {
+                if (row + r < 0 || this.moduleCount <= row + r) continue;
+                for (let c = -1; c <= 1; c++) {
+                  if (col + c < 0 || this.moduleCount <= col + c) continue;
+                  if (r === 0 && c === 0) continue;
+                  if (dark === this.modules[row + r][col + c]) sameCount++;
+                }
+              }
+              if (sameCount > 5) lostPoint += (3 + sameCount - 5);
+            }
+          }
+          return lostPoint;
+        }
+      };
+      
+      QRCode.createData = function(typeNumber, errorCorrectLevel, dataList) {
+        const buffer = [];
+        for (let i = 0; i < dataList.length; i++) {
+          const data = dataList[i];
+          buffer.push(4);
+          buffer.push(data.data.length);
+          for (let j = 0; j < data.data.length; j++) {
+            buffer.push(data.data.charCodeAt(j));
+          }
+        }
+        let totalDataCount = 0;
+        for (let i = 0; i < buffer.length; i += 2 + buffer[i + 1]) {
+          totalDataCount += buffer[i + 1];
+        }
+        const rsBlocks = [[1, 26, 19], [1, 44, 34]][errorCorrectLevel] || [1, 26, 19];
+        const dcdata = new Array(rsBlocks[2]);
+        let offset = 0;
+        for (let i = 0; i < buffer.length; i += 2 + buffer[i + 1]) {
+          for (let j = 0; j < buffer[i + 1]; j++) {
+            dcdata[offset++] = buffer[i + 2 + j];
+          }
+        }
+        const rsPoly = QRCode.getErrorCorrectPolynomial(rsBlocks[1] - rsBlocks[2]);
+        const rawPoly = new QRPolynomial(dcdata, rsPoly.getLength() - 1);
+        const modPoly = rawPoly.mod(rsPoly);
+        const ecdata = new Array(rsPoly.getLength() - 1);
+        for (let i = 0; i < ecdata.length; i++) {
+          const modIndex = i + modPoly.getLength() - ecdata.length;
+          ecdata[i] = modIndex >= 0 ? modPoly.get(modIndex) : 0;
+        }
+        const data = new Array(rsBlocks[1]);
+        let index = 0;
+        for (let i = 0; i < rsBlocks[0]; i++) {
+          for (let j = 0; j < rsBlocks[2]; j++) {
+            data[index++] = dcdata[i + j * rsBlocks[0]];
+          }
+        }
+        for (let i = 0; i < rsBlocks[0]; i++) {
+          for (let j = 0; j < rsBlocks[1] - rsBlocks[2]; j++) {
+            data[index++] = ecdata[i + j * rsBlocks[0]];
+          }
+        }
+        return data;
+      };
+      
+      QRCode.getErrorCorrectPolynomial = function(errorCorrectLength) {
+        let a = new QRPolynomial([1], 0);
+        for (let i = 0; i < errorCorrectLength; i++) {
+          a = a.multiply(new QRPolynomial([1, QRMath.gexp(i)], 0));
+        }
+        return a;
+      };
+      
+      return {
+        generate: function(text, size) {
+          const qr = new QRCode(5, QRErrorCorrectLevel.M);
+          qr.addData(text);
+          qr.make();
+          
+          const canvas = document.createElement("canvas");
+          const cellSize = Math.floor(size / qr.moduleCount);
+          const margin = Math.floor(cellSize * 0.5);
+          canvas.width = canvas.height = qr.moduleCount * cellSize + margin * 2;
+          
+          const ctx = canvas.getContext("2d");
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = "#000000";
+          
+          for (let row = 0; row < qr.moduleCount; row++) {
+            for (let col = 0; col < qr.moduleCount; col++) {
+              if (qr.modules[row][col]) {
+                ctx.fillRect(
+                  margin + col * cellSize,
+                  margin + row * cellSize,
+                  cellSize,
+                  cellSize
+                );
+              }
+            }
+          }
+          
+          return canvas;
+        }
+      };
+    })();
+    
+    async function copyToClipboard(text, button) {
+      try {
+        await navigator.clipboard.writeText(text);
+        const originalText = button.innerHTML;
+        button.innerHTML = '✓ Copied!';
+        button.disabled = true;
+        setTimeout(() => {
+          button.innerHTML = originalText;
+          button.disabled = false;
+        }, 2000);
+        showToast('Copied to clipboard successfully!', 'success');
+      } catch (error) {
+        try {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            textArea.style.top = "0";
+            textArea.style.left = "0";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            
+            const originalText = button.innerHTML;
+            button.innerHTML = '✓ Copied!';
+            button.disabled = true;
+            setTimeout(() => {
+                button.innerHTML = originalText;
+                button.disabled = false;
+            }, 2000);
+            showToast('Copied to clipboard (fallback)!', 'success');
+        } catch(err) {
+            showToast('Failed to copy to clipboard', 'error');
+            console.error('Copy error:', error, err);
+        }
+      }
+    }
+
+    function downloadConfig(content, filename) {
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      showToast(\`Configuration downloaded: \${filename}\`, 'success');
+    }
+
+    // =========================================
+    // ROBUST IP DETECTION - MULTIPLE FALLBACKS
+    // =========================================
+    async function fetchIPInfo() {
+      const displayElement = (id, value, isFinal = false) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        
+        el.textContent = value || 'Unavailable';
+        if (isFinal) {
+          el.classList.remove('detecting');
+        }
+      };
+
+      async function fetchWithTimeout(url, timeout = 8000) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+        
+        try {
+          const response = await fetch(url, { 
+            signal: controller.signal,
+            cache: 'no-store',
+            mode: 'cors'
+          });
+          clearTimeout(timeoutId);
+          
+          if (!response.ok) throw new Error(\`HTTP \${response.status}\`);
+          return response;
+        } catch (error) {
+          clearTimeout(timeoutId);
+          throw error;
+        }
+      }
+
+      // CLIENT IP DETECTION
+      const clientIPAPIs = [
+        { 
+          url: 'https://api.ipify.org?format=json', 
+          parse: async (r) => (await r.json()).ip
+        },
+        {
+          url: 'https://ipapi.co/json/',
+          parse: async (r) => (await r.json()).ip
+        },
+        {
+          url: 'https://ifconfig.me/ip',
+          parse: async (r) => (await r.text()).trim()
+        },
+        {
+          url: 'https://icanhazip.com',
+          parse: async (r) => (await r.text()).trim()
+        },
+        {
+          url: 'https://api.my-ip.io/v2/ip.json',
+          parse: async (r) => (await r.json()).ip
+        },
+        {
+          url: 'https://checkip.amazonaws.com',
+          parse: async (r) => (await r.text()).trim()
+        },
+        {
+          url: 'https://wtfismyip.com/text',
+          parse: async (r) => (await r.text()).trim()
+        }
+      ];
+
+      let clientIP = null;
+      for (const api of clientIPAPIs) {
+        try {
+          const response = await fetchWithTimeout(api.url);
+          clientIP = await api.parse(response);
+          if (clientIP && clientIP.trim() && /^[0-9.:a-fA-F]+$/.test(clientIP.trim())) {
+            clientIP = clientIP.trim();
+            displayElement('client-ip', clientIP, true);
+            console.log(\`✓ Client IP detected: \${clientIP} via \${api.url}\`);
+            break;
+          }
+        } catch (error) {
+          console.warn(\`Client IP API failed (\${api.url}): \${error.message}\`);
+        }
+      }
+
+      if (!clientIP) {
+        displayElement('client-ip', 'Detection failed', true);
+      }
+
+      // CLIENT GEOLOCATION
+      const clientGeoAPIs = [
+        {
+          url: clientIP ? \`https://ipapi.co/\${clientIP}/json/\` : 'https://ipapi.co/json/',
+          parse: async (r) => {
+            const data = await r.json();
+            if (data.error) throw new Error(data.reason || 'API Error');
+            return {
+              city: data.city || '',
+              country: data.country_name || '',
+              isp: data.org || ''
+            };
+          }
+        },
+        {
+          url: clientIP ? \`https://ip-api.com/json/\${clientIP}?fields=status,message,city,country,isp\` : 'https://ip-api.com/json/?fields=status,message,city,country,isp',
+          parse: async (r) => {
+            const data = await r.json();
+            if (data.status === 'fail') throw new Error(data.message || 'API Error');
+            return {
+              city: data.city || '',
+              country: data.country || '' ,
+              isp: data.isp || ''
+            };
+          }
+        },
+        {
+          url: clientIP ? \`https://ipwho.is/\${clientIP}\` : 'https://ipwho.is/',
+          parse: async (r) => {
+            const data = await r.json();
+            if (!data.success) throw new Error('API Error');
+            return {
+              city: data.city || '',
+              country: data.country || ''
+            };
+          }
+        }
+      ];
+
+      let clientGeo = null;
+      for (const api of clientGeoAPIs) {
+        try {
+          const response = await fetchWithTimeout(api.url);
+          clientGeo = await api.parse(response);
+          if (clientGeo && (clientGeo.city || clientGeo.country)) {
+            const location = [clientGeo.city, clientGeo.country].filter(Boolean).join(', ') || 'Unknown';
+            displayElement('client-location', location, true);
+            displayElement('client-isp', clientGeo.isp || 'Unknown', true);
+            break;
+          }
+        } catch (error) {
+          console.warn(\`Client Geo API failed (\${api.url}): \${error.message}\`);
+        }
+      }
+
+      if (!clientGeo) {
+        displayElement('client-location', 'Detection failed', true);
+        displayElement('client-isp', 'Detection failed', true);
+      }
+
+      // PROXY IP RESOLUTION
+      const proxyHost = window.CONFIG.proxyAddress.split(':')[0];
+      let proxyIP = proxyHost;
+      
+      const ipv4Regex = /^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$/;
+      const ipv6Regex = /^\\[?[0-9a-fA-F:]+\\]?$/;
+      
+      if (!ipv4Regex.test(proxyHost) && !ipv6Regex.test(proxyHost)) {
+        const dnsAPIs = [
+          {
+            url: \`https://cloudflare-dns.com/dns-query?name=\${encodeURIComponent(proxyHost)}&type=A\`,
+            headers: { 'accept': 'application/dns-json' },
+            parse: async (r) => {
+              const data = await r.json();
+              const answer = data.Answer?.find(a => a.type === 1);
+              return answer?.data;
+            }
+          },
+          {
+            url: \`https://dns.google/resolve?name=\${encodeURIComponent(proxyHost)}&type=A\`,
+            headers: { 'accept': 'application/json' },
+            parse: async (r) => {
+              const data = await r.json();
+              const answer = data.Answer?.find(a => a.type === 1);
+              return answer?.data;
+            }
+          },
+          {
+            url: \`https://1.1.1.1/dns-query?name=\${encodeURIComponent(proxyHost)}&type=A\`,
+            headers: { 'accept': 'application/dns-json' },
+            parse: async (r) => {
+              const data = await r.json();
+              const answer = data.Answer?.find(a => a.type === 1);
+              return answer?.data;
+            }
+          }
+        ];
+
+        for (const api of dnsAPIs) {
+          try {
+            const response = await fetchWithTimeout(api.url);
+            const resolvedIP = await api.parse(response);
+            if (resolvedIP && /^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$/.test(resolvedIP)) {
+              proxyIP = resolvedIP;
+              break;
+            }
+          } catch (error) {
+            console.warn(\`DNS resolution failed (\${api.url}): \${error.message}\`);
+          }
+        }
+      }
+      
+      displayElement('proxy-ip', proxyIP, true);
+
+      // PROXY GEOLOCATION
+      const proxyGeoAPIs = [
+        {
+          url: \`https://ipapi.co/\${proxyIP}/json/\`,
+          parse: async (r) => {
+            const data = await r.json();
+            if (data.error) throw new Error(data.reason || 'API Error');
+            return {
+              city: data.city || '',
+              country: data.country_name || ''
+            };
+          }
+        },
+        {
+          url: \`https://ip-api.com/json/\${proxyIP}?fields=status,message,city,country\`,
+          parse: async (r) => {
+            const data = await r.json();
+            if (data.status === 'fail') throw new Error(data.message || 'API Error');
+            return {
+              city: data.city || '',
+              country: data.country || ''
+            };
+          }
+        },
+        {
+          url: \`https://ipwho.is/\${proxyIP}\`,
+          parse: async (r) => {
+            const data = await r.json();
+            if (!data.success) throw new Error('API Error');
+            return {
+              city: data.city || '',
+              country: data.country || ''
+            };
+          }
+        }
+      ];
+
+      let proxyGeo = null;
+      for (const api of proxyGeoAPIs) {
+        try {
+          const response = await fetchWithTimeout(api.url);
+          proxyGeo = await api.parse(response);
+          if (proxyGeo && (proxyGeo.city || proxyGeo.country)) {
+            const location = [proxyGeo.city, proxyGeo.country].filter(Boolean).join(', ') || 'Unknown';
+            displayElement('proxy-location', location, true);
+            break;
+          }
+        } catch (error) {
+          console.warn(\`Proxy Geo API failed (\${api.url}): \${error.message}\`);
+        }
+      }
+
+      if (!proxyGeo) {
+        displayElement('proxy-location', 'Detection failed', true);
+      }
+    }
+
+    function updateExpirationDisplay() {
+      if (!window.CONFIG.expirationDateTime) {
+        const countdownEl = document.getElementById('expiry-countdown');
+        const localEl = document.getElementById('expiry-local');
+        const utcEl = document.getElementById('expiry-utc');
+        if (countdownEl) countdownEl.textContent = 'Unlimited';
+        if (localEl) localEl.textContent = 'No expiration set (Unlimited)';
+        if (utcEl) utcEl.textContent = '';
+        return;
+      }
+      
+      const expiryDate = new Date(window.CONFIG.expirationDateTime);
+      if (isNaN(expiryDate.getTime())) {
+        document.getElementById('expiry-local').textContent = 'Invalid expiration date';
+        document.getElementById('expiry-utc').textContent = '';
+        document.getElementById('expiry-countdown').textContent = 'Invalid';
+        return;
+      }
+      
+      const now = new Date();
+      const diffMs = expiryDate - now;
+      const diffSeconds = Math.floor(diffMs / 1000);
+      
+      const countdownEl = document.getElementById('expiry-countdown');
+      const localEl = document.getElementById('expiry-local');
+      const utcEl = document.getElementById('expiry-utc');
+      
+      if (diffSeconds < 0) {
+        countdownEl.textContent = 'Expired';
+        countdownEl.parentElement.classList.add('status-expired');
+        return;
+      }
+      
+      const days = Math.floor(diffSeconds / 86400);
+      const hours = Math.floor((diffSeconds % 86400) / 3600);
+      const minutes = Math.floor((diffSeconds % 3600) / 60);
+      const seconds = diffSeconds % 60;
+      
+      if (days > 0) {
+        countdownEl.textContent = days + 'd ' + hours + 'h ' + minutes + 'm ' + seconds + 's';
+      } else if (hours > 0) {
+        countdownEl.textContent = hours + 'h ' + minutes + 'm ' + seconds + 's';
+      } else if (minutes > 0) {
+        countdownEl.textContent = minutes + 'm ' + seconds + 's';
+      } else {
+        countdownEl.textContent = seconds + 's';
+      }
+      
+      if (localEl) {
+        localEl.textContent = \`Expires: \${expiryDate.toLocaleString()}\`;
+      }
+      if (utcEl) {
+        utcEl.textContent = \`UTC: \${expiryDate.toISOString().replace('T', ' ').substring(0, 19)}\`;
+      }
+    }
+
+    function animateProgressBar(targetWidth) {
+      const progressBar = document.getElementById('progress-bar-fill');
+      if (!progressBar) return;
+      
+      setTimeout(() => {
+        progressBar.style.width = targetWidth + '%';
+      }, 100);
+    }
+
+    async function refreshUserPanel() {
+      try {
+        const response = await fetch('/api/user/' + window.CONFIG.uuid);
+
+        if (response.ok) {
+          const data = await response.json();
+
+          const usageDisplay = document.getElementById('usage-display');
+          usageDisplay.textContent = await formatBytes(data.traffic_used || 0);
+
+          let usagePercentage = 0;
+          if (data.traffic_limit && data.traffic_limit > 0) {
+            usagePercentage = Math.min(((data.traffic_used || 0) / data.traffic_limit) * 100, 100);
+          }
+
+          let usagePercentageDisplay;
+          if (usagePercentage > 0 && usagePercentage < 0.01) {
+            usagePercentageDisplay = '< 0.01%';
+          } else if (usagePercentage === 0) {
+            usagePercentageDisplay = '0%';
+          } else if (usagePercentage === 100) {
+            usagePercentageDisplay = '100%';
+          } else {
+            usagePercentageDisplay = usagePercentage.toFixed(2) + '%';
+          }
+
+          const progressFill = document.getElementById('progress-bar-fill');
+          if (progressFill) {
+            progressFill.dataset.targetWidth = usagePercentage.toFixed(2);
+            progressFill.className = 'progress-fill ' + (usagePercentage > 80 ? 'high' : usagePercentage > 50 ? 'medium' : 'low');
+            animateProgressBar(usagePercentage);
+          }
+
+          const usageStat = document.querySelector('.section-title span.muted');
+          if (usageStat) {
+            usageStat.textContent = usagePercentageDisplay + ' Used';
+          }
+
+          const usageText = document.querySelector('.progress-bar + p');
+          if (usageText) {
+            usageText.textContent = (await formatBytes(data.traffic_used || 0)) + ' of ' + (data.traffic_limit ? (await formatBytes(data.traffic_limit)) : 'Unlimited') + ' used';
+          }
+        }
+
+        updateExpirationDisplay();
+        showToast('Panel auto-refreshed', 'success');
+      } catch (error) {
+        console.error('Auto-refresh error:', error);
+      }
+    }
+
+    function startUserAutoRefresh() {
+      setInterval(refreshUserPanel, ${CONST.AUTO_REFRESH_INTERVAL});
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      try {
+        QRCodeGenerator.generate;  // Test if generator is available
+        console.log('QR Code system ready');
+      } catch (e) {
+        console.error('QR generator init error:', e);
+      }
+
+        document.getElementById('copy-xray-sub').addEventListener('click', async function() {
+          await copyToClipboard(window.CONFIG.subXrayUrl, this);
+        });
+        
+        document.getElementById('copy-sb-sub').addEventListener('click', async function() {
+          await copyToClipboard(window.CONFIG.subSbUrl, this);
+        });
+        
+        document.getElementById('show-xray-config').addEventListener('click', () => {
+          document.getElementById('xray-config').classList.toggle('hidden');
+        });
+        
+        document.getElementById('show-sb-config').addEventListener('click', () => {
+          document.getElementById('sb-config').classList.toggle('hidden');
+        });
+        
+        document.getElementById('qr-xray-sub-btn').addEventListener('click', () => {
+          generateQRCode(window.CONFIG.subXrayUrl);
+        });
+        
+        document.getElementById('qr-sb-sub-btn').addEventListener('click', () => {
+          generateQRCode(window.CONFIG.subSbUrl);
+        });
+        
+        document.getElementById('qr-xray-config-btn').addEventListener('click', () => {
+          generateQRCode(window.CONFIG.singleXrayConfig);
+        });
+        
+        document.getElementById('qr-sb-config-btn').addEventListener('click', () => {
+          generateQRCode(window.CONFIG.singleSingboxConfig);
+        });
+        
+        document.getElementById('download-xray').addEventListener('click', () => {
+          downloadConfig(window.CONFIG.singleXrayConfig, 'xray-vless-config.txt');
+        });
+        
+        document.getElementById('download-sb').addEventListener('click', () => {
+          downloadConfig(window.CONFIG.singleSingboxConfig, 'singbox-vless-config.txt');
+        });
+        
+        document.getElementById('btn-refresh-ip').addEventListener('click', () => {
+          showToast('Refreshing network information...', 'success');
+          location.reload();  // Server-side, so reload
+        });
+        
+        // Use server-injected geo data
+        document.getElementById('proxy-ip').textContent = window.PROXY_IP || 'Detection failed';
+        document.getElementById('proxy-location').textContent = window.PROXY_GEO ? [window.PROXY_GEO.city, window.PROXY_GEO.country].filter(Boolean).join(', ') : 'Detection failed';
+        document.getElementById('client-ip').textContent = window.CLIENT_IP || 'Detection failed';
+        document.getElementById('client-location').textContent = window.CLIENT_GEO ? [window.CLIENT_GEO.city, window.CLIENT_GEO.country].filter(Boolean).join(', ') : 'Detection failed';
+        document.getElementById('client-isp').textContent = window.CLIENT_GEO ? window.CLIENT_GEO.isp : 'Detection failed';
+        
+        // Remove detecting class
+        ['proxy-ip', 'proxy-location', 'client-ip', 'client-location', 'client-isp'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.classList.remove('detecting');
+        });
+        
+        updateExpirationDisplay();
+        if (!window.CONFIG.expirationDateTime) {
+          document.getElementById('expiry-local').textContent = 'No expiration set (Unlimited)';
+          document.getElementById('expiry-utc').textContent = '';
+          document.getElementById('expiry-countdown').textContent = 'Unlimited';
+        }
+        animateProgressBar(window.CONFIG.initialTrafficUsed ? (window.CONFIG.initialTrafficUsed / window.CONFIG.trafficLimit * 100).toFixed(2) : 0);
+        
+        setInterval(updateExpirationDisplay, 1000); // Update every second for precise countdown
+        startUserAutoRefresh(); // Start auto-refresh for user panel
+      } catch (e) {
+        console.error('User panel init error:', e);
+        showToast('Panel initialization failed', 'error');
+      }
+    });
+    
+    // ============================================================================
+    // INTEGRATED ULTRA ADAPTIVE SMART POLLING (RASPS) - ADVANCED AUTO-REFRESH
+    // ============================================================================
+    
+    (function() {
+        const CONFIG = {
+            ENDPOINT: '/api/user/' + window.CONFIG.uuid,
+            POLL_MIN_MS: 50000, // Adjusted base to ~1min with jitter
+            POLL_MAX_MS: 70000,
+            INACTIVE_MULTIPLIER: 4,
+            MAX_BACKOFF_MS: 300000,
+            INITIAL_BACKOFF_MS: 2000,
+            BACKOFF_FACTOR: 1.8,
+            USE_ETAG: true,
+            FIELDS_TO_TRACK: ['usedMB', 'data_used', 'limitMB', 'data_limit', 'expires', 'status'],
+            DOM_SELECTORS: {
+                usage: '#usage-display',
+                status: '#status-badge',
+                time: '#expiry-countdown'
+            }
+        };
+
+        let lastEtag = null;
+        let lastModified = null;
+        let lastDataHash = null;
+        let currentBackoff = CONFIG.INITIAL_BACKOFF_MS;
+        let isPolling = false;
+        let pollTimeout = null;
+        let isPageVisible = document.visibilityState === 'visible';
+        let lastSuccessfulFetch = Date.now();
+
+        function getRandomDelay() {
+            const baseMin = CONFIG.POLL_MIN_MS;
+            const baseMax = CONFIG.POLL_MAX_MS;
+            const multiplier = isPageVisible ? 1 : CONFIG.INACTIVE_MULTIPLIER;
+            const minDelay = baseMin * multiplier;
+            const maxDelay = baseMax * multiplier;
+            return Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
+        }
+
+        function computeHash(data) {
+            const str = JSON.stringify(data);
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                const char = str.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash = hash & hash;
+            }
+            return hash.toString(36);
+        }
+
+        function extractDataFromJson(json) {
+            return {
+                usedMB: json.traffic_used || json.usedMB,
+                limitMB: json.traffic_limit || json.limitMB,
+                expires: json.expiration_date + 'T' + json.expiration_time + 'Z' || json.expires,
+                status: json.status
+            };
+        }
+
+        function extractDataFromHtml(html) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            return {
+                usedMB: doc.querySelector(CONFIG.DOM_SELECTORS.usage)?.textContent.trim() || null,
+                expires: doc.querySelector(CONFIG.DOM_SELECTORS.time)?.textContent.trim() || null,
+                status: doc.querySelector(CONFIG.DOM_SELECTORS.status)?.textContent.trim() || null
+            };
+        }
+
+        let updateDOM = async function(data) {
+            const usageEl = document.querySelector(CONFIG.DOM_SELECTORS.usage);
+            const timeEl = document.querySelector(CONFIG.DOM_SELECTORS.time);
+            const statusEl = document.querySelector(CONFIG.DOM_SELECTORS.status);
+
+            if (usageEl && data.usedMB && data.limitMB) {
+                const percentage = ((data.usedMB / data.limitMB) * 100).toFixed(1);
+                usageEl.textContent = (await formatBytes(data.usedMB)) || '0 Bytes';
+                const usageStat = document.querySelector('.section-title span.muted');
+                if (usageStat) {
+                    usageStat.textContent = percentage + '% Used';
+                }
+                const progressFill = document.getElementById('progress-bar-fill');
+                if (progressFill) {
+                    progressFill.dataset.targetWidth = percentage;
+                    progressFill.className = 'progress-fill ' + (percentage > 80 ? 'high' : percentage > 50 ? 'medium' : 'low');
+                    animateProgressBar(percentage);
+                }
+                const usageText = document.querySelector('.progress-bar + p');
+                if (usageText) {
+                    usageText.textContent = (await formatBytes(data.usedMB)) + ' of ' + (await formatBytes(data.limitMB)) + ' used';
+                }
+            }
+            if (timeEl && data.expires) {
+                window.CONFIG.expirationDateTime = data.expires;
+                updateExpirationDisplay();
+            }
+            if (statusEl && data.status) {
+                statusEl.textContent = data.status;
+                statusEl.parentElement.className = 'stat ' + (data.status === 'Expired' ? 'status-expired' : 'status-active');
+            }
+            showToast('Data refreshed', 'success');
+        }
+
+        async function fetchData() {
+            const headers = new Headers({
+                'Cache-Control': 'no-cache'
+            });
+            if (CONFIG.USE_ETAG && lastEtag) {
+                headers.set('If-None-Match', lastEtag);
+            }
+            if (lastModified) {
+                headers.set('If-Modified-Since', lastModified);
+            }
+
+            try {
+                const response = await fetch(CONFIG.ENDPOINT, {
+                    method: 'GET',
+                    headers: headers,
+                    cache: 'no-store'
+                });
+
+                if (response.status === 304) {
+                    console.debug('Data unchanged (304 Not Modified)');
+                    return null;
+                }
+
+                if (!response.ok) {
+                    throw new Error('HTTP error: ' + response.status);
+                }
+
+                lastEtag = response.headers.get('ETag');
+                lastModified = response.headers.get('Last-Modified');
+                lastSuccessfulFetch = Date.now();
+
+                const contentType = response.headers.get('Content-Type') || '';
+                let rawData;
+                if (contentType.includes('application/json')) {
+                    rawData = await response.json();
+                } else {
+                    rawData = await response.text();
+                }
+
+                const data = contentType.includes('application/json')
+                    ? extractDataFromJson(rawData)
+                    : extractDataFromHtml(rawData);
+
+                const newHash = computeHash(data);
+                if (newHash === lastDataHash) {
+                    console.debug('Data hash unchanged - skipping DOM update');
+                    return null;
+                }
+
+                lastDataHash = newHash;
+                return data;
+            } catch (error) {
+                console.warn('Fetch error:', error.message);
+                throw error;
+            }
+        }
+
+        function scheduleNextPoll() {
+            if (pollTimeout) clearTimeout(pollTimeout);
+            const delay = getRandomDelay();
+            console.debug('Next poll in ' + Math.round(delay / 1000) + ' seconds');
+            pollTimeout = setTimeout(poll, delay);
+        }
+
+        async function poll() {
+            if (!isPolling) return;
+
+            try {
+                const data = await fetchData();
+                if (data) {
+                    await updateDOM(data);
+                    console.debug('Data updated successfully');
+                }
+                currentBackoff = CONFIG.INITIAL_BACKOFF_MS;
+            } catch (error) {
+                console.error('Polling failed:', error);
+                const jitter = Math.random() * (currentBackoff / 2);
+                currentBackoff = Math.min(currentBackoff * CONFIG.BACKOFF_FACTOR + jitter, CONFIG.MAX_BACKOFF_MS);
+                console.warn('Retrying after ' + Math.round(currentBackoff / 1000) + ' seconds');
+            } finally {
+                scheduleNextPoll();
+            }
+        }
+
+        function handleVisibilityChange() {
+            isPageVisible = document.visibilityState === 'visible';
+            if (isPageVisible && Date.now() - lastSuccessfulFetch > CONFIG.POLL_MIN_MS) {
+                poll();
+            }
+        }
+
+        function startPolling() {
+            if (isPolling) return;
+            isPolling = true;
+            document.addEventListener('visibilitychange', handleVisibilityChange);
+            scheduleNextPoll();
+        }
+
+        function stopPolling() {
+            isPolling = false;
+            if (pollTimeout) clearTimeout(pollTimeout);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        }
+
+        // Advanced features: Idle detection and adaptive rate based on change frequency
+        let changeFrequency = 0;
+        let lastChangeTime = Date.now();
+        function adjustPollingRate(hasChanged) {
+            if (hasChanged) {
+                changeFrequency++;
+                const timeSinceLastChange = Date.now() - lastChangeTime;
+                if (timeSinceLastChange < CONFIG.POLL_MIN_MS) {
+                    CONFIG.POLL_MIN_MS = Math.max(CONFIG.POLL_MIN_MS / 1.2, 10000);
+                    CONFIG.POLL_MAX_MS = Math.max(CONFIG.POLL_MAX_MS / 1.2, 30000);
+                }
+                lastChangeTime = Date.now();
+            } else {
+                changeFrequency = Math.max(0, changeFrequency - 0.5);
+                if (changeFrequency < 1) {
+                    CONFIG.POLL_MIN_MS = Math.min(CONFIG.POLL_MIN_MS * 1.1, 35000);
+                    CONFIG.POLL_MAX_MS = Math.min(CONFIG.POLL_MAX_MS * 1.1, 85000);
+                }
+            }
+        }
+
+        // Override updateDOM to track changes
+        const originalUpdateDOM = updateDOM;
+        updateDOM = async function(data) {
+            await originalUpdateDOM(data);
+            const hasChanged = true; // Assume change for safety; can refine with diff
+            adjustPollingRate(hasChanged);
+        };
+
+        // Start the system
+        if (CONFIG.ENDPOINT) {
+            startPolling();
+        } else {
+            console.error('RASPS: ENDPOINT not configured - polling disabled');
+        }
+
+        // Export controls for debugging
+        window.RASPS = {
+            start: startPolling,
+            stop: stopPolling,
+            config: CONFIG
+        };
+    })();
+  </script>
+</body>
+</html>
+  `;
+
+  const nonce = generateNonce();
+  const headers = new Headers({ 'Content-Type': 'text/html;charset=utf-8' });
+  addSecurityHeaders(headers, nonce, {
+    img: 'data: https://api.qrserver.com',
+    connect: 'https://api.qrserver.com'
+  });
+  
+  let finalHtml = userPanelHTML.replace(/CSP_NONCE_PLACEHOLDER/g, nonce);
+  finalHtml = finalHtml.replace('window.CLIENT_GEO = null;', `window.CLIENT_GEO = ${JSON.stringify(clientGeo)};`);
+  finalHtml = finalHtml.replace('window.PROXY_GEO = null;', `window.PROXY_GEO = ${JSON.stringify(proxyGeo)};`);
+  finalHtml = finalHtml.replace('window.PROXY_IP = null;', `window.PROXY_IP = "${proxyIP}";`);
+  finalHtml = finalHtml.replace('window.CLIENT_IP = null;', `window.CLIENT_IP = "${clientIp}";`);
+
+  return new Response(finalHtml, { headers });
+}
 
 // ============================================================================
-// VLESS PROTOCOL HANDLERS - ENHANCED WITH COMPREHENSIVE ERROR RECOVERY
+// VLESS PROTOCOL HANDLERS (complete, unchanged from original)
 // ============================================================================
 
 async function ProtocolOverWSHandler(request, config, env, ctx) {
   const clientIp = request.headers.get('CF-Connecting-IP');
-  
-  // Scamalytics check with failsafe
-  try {
-    if (await isSuspiciousIP(clientIp, config.scamalytics, env.SCAMALYTICS_THRESHOLD || CONST.SCAMALYTICS_THRESHOLD)) {
-      return new Response('Access denied', { status: 403 });
-    }
-  } catch (e) {
-    console.warn(`Scamalytics check failed: ${e.message} - Allowing connection`);
+  if (await isSuspiciousIP(clientIp, config.scamalytics, env.SCAMALYTICS_THRESHOLD || CONST.SCAMALYTICS_THRESHOLD)) {
+    return new Response('Access denied', { status: 403 });
   }
 
   const webSocketPair = new WebSocketPair();
   const [client, webSocket] = Object.values(webSocketPair);
-  
-  try {
-    webSocket.accept();
-  } catch (e) {
-    console.error(`WebSocket accept failed: ${e.message}`);
-    return new Response('Connection failed', { status: 500 });
-  }
+  webSocket.accept();
 
   let address = '';
   let portWithRandomLog = '';
@@ -1219,7 +3343,7 @@ async function ProtocolOverWSHandler(request, config, env, ctx) {
   const log = (info, event) => console.log(`[${address}:${portWithRandomLog}] ${info}`, event || '');
 
   const deferredUsageUpdate = () => {
-    if (sessionUsage > 0 && userUUID && env.DB) {
+    if (sessionUsage > 0 && userUUID) {
       const usageToUpdate = sessionUsage;
       const uuidToUpdate = userUUID;
       
@@ -1227,7 +3351,7 @@ async function ProtocolOverWSHandler(request, config, env, ctx) {
       
       ctx.waitUntil(
         updateUsage(env, uuidToUpdate, usageToUpdate, ctx)
-          .catch(err => console.error(`❌ Deferred usage update failed for ${uuidToUpdate}:`, err))
+          .catch(err => console.error(`Deferred usage update failed for ${uuidToUpdate}:`, err))
       );
     }
   };
@@ -1243,17 +3367,7 @@ async function ProtocolOverWSHandler(request, config, env, ctx) {
   webSocket.addEventListener('error', finalCleanup, { once: true });
 
   const earlyDataHeader = request.headers.get('Sec-WebSocket-Protocol') || '';
-  
-  let readableWebSocketStream;
-  try {
-    readableWebSocketStream = MakeReadableWebSocketStream(webSocket, earlyDataHeader, log);
-  } catch (e) {
-    console.error(`❌ Failed to create readable stream: ${e.message}`);
-    safeCloseWebSocket(webSocket);
-    finalCleanup();
-    return new Response('Stream creation failed', { status: 500 });
-  }
-  
+  const readableWebSocketStream = MakeReadableWebSocketStream(webSocket, earlyDataHeader, log);
   let remoteSocketWrapper = { value: null };
 
   readableWebSocketStream
@@ -1263,34 +3377,13 @@ async function ProtocolOverWSHandler(request, config, env, ctx) {
           sessionUsage += chunk.byteLength;
 
           if (udpStreamWriter) {
-            try {
-              return await udpStreamWriter.write(chunk);
-            } catch (e) {
-              console.error(`❌ UDP write error: ${e.message}`);
-              controller.error(new Error('UDP write failed'));
-              return;
-            }
+            return udpStreamWriter.write(chunk);
           }
 
           if (remoteSocketWrapper.value) {
-            try {
-              const writer = remoteSocketWrapper.value.writable.getWriter();
-              await writer.write(chunk);
-              writer.releaseLock();
-              return;
-            } catch (e) {
-              console.error(`❌ Remote socket write error: ${e.message}`);
-              controller.error(new Error('Socket write failed'));
-              return;
-            }
-          }
-
-          let processResult;
-          try {
-            processResult = await ProcessProtocolHeader(chunk, env, ctx);
-          } catch (e) {
-            console.error(`❌ Protocol header processing failed: ${e.message}`);
-            controller.error(new Error('Protocol processing failed'));
+            const writer = remoteSocketWrapper.value.writable.getWriter();
+            await writer.write(chunk);
+            writer.releaseLock();
             return;
           }
 
@@ -1304,10 +3397,14 @@ async function ProtocolOverWSHandler(request, config, env, ctx) {
             rawDataIndex,
             ProtocolVersion = new Uint8Array([0, 0]),
             isUDP,
-          } = processResult;
+          } = await ProcessProtocolHeader(chunk, env, ctx);
 
-          if (hasError || !user) {
-            console.warn(`❌ Authentication failed: ${message || 'Unknown error'}`);
+          if (hasError) {
+            controller.error(new Error('Authentication failed'));
+            return;
+          }
+          
+          if (!user) {
             controller.error(new Error('Authentication failed'));
             return;
           }
@@ -1315,33 +3412,27 @@ async function ProtocolOverWSHandler(request, config, env, ctx) {
           userUUID = user.uuid;
 
           if (isExpired(user.expiration_date, user.expiration_time)) {
-            console.warn(`❌ Account expired for user: ${userUUID}`);
-            controller.error(new Error('Account expired'));
+            controller.error(new Error('Authentication failed'));
             return;
           }
 
           if (user.traffic_limit && user.traffic_limit > 0) {
             const totalUsage = (user.traffic_used || 0) + sessionUsage;
             if (totalUsage >= user.traffic_limit) {
-              console.warn(`❌ Traffic limit exceeded for user: ${userUUID}`);
-              controller.error(new Error('Traffic limit exceeded'));
+              controller.error(new Error('Authentication failed'));
               return;
             }
           }
 
-          // IP Limit Check with error handling
-          if (user.ip_limit && user.ip_limit > -1 && env.DB) {
-            try {
-              const ipCount = await env.DB.prepare("SELECT COUNT(DISTINCT ip) as count FROM user_ips WHERE uuid = ?").bind(userUUID).first('count');
-              if (ipCount >= user.ip_limit) {
-                console.warn(`❌ IP limit exceeded for user: ${userUUID}`);
-                controller.error(new Error('IP limit exceeded'));
-                return;
-              }
-              await env.DB.prepare("INSERT OR REPLACE INTO user_ips (uuid, ip, last_seen) VALUES (?, ?, CURRENT_TIMESTAMP)").bind(userUUID, clientIp).run();
-            } catch (e) {
-              console.error(`❌ IP limit check failed: ${e.message} - Continuing without IP tracking`);
+          // IP Limit Check
+          if (user.ip_limit && user.ip_limit > -1) {
+            const ipCount = await env.DB.prepare("SELECT COUNT(DISTINCT ip) as count FROM user_ips WHERE uuid = ?").bind(userUUID).first('count');
+            if (ipCount >= user.ip_limit) {
+              controller.error(new Error('IP limit exceeded'));
+              return;
             }
+            // Update current IP
+            await env.DB.prepare("INSERT OR REPLACE INTO user_ips (uuid, ip, last_seen) VALUES (?, ?, CURRENT_TIMESTAMP)").bind(userUUID, clientIp).run();
           }
 
           address = addressRemote;
@@ -1351,53 +3442,42 @@ async function ProtocolOverWSHandler(request, config, env, ctx) {
 
           if (isUDP) {
             if (portRemote === 53) {
-              try {
-                const dnsPipeline = await createDnsPipeline(webSocket, vlessResponseHeader, log, (bytes) => {
-                  sessionUsage += bytes;
-                });
-                udpStreamWriter = dnsPipeline.write;
-                await udpStreamWriter(rawClientData);
-              } catch (e) {
-                console.error(`❌ DNS pipeline creation failed: ${e.message}`);
-                controller.error(new Error('DNS pipeline failed'));
-              }
+              const dnsPipeline = await createDnsPipeline(webSocket, vlessResponseHeader, log, (bytes) => {
+                sessionUsage += bytes;
+              });
+              udpStreamWriter = dnsPipeline.write;
+              await udpStreamWriter(rawClientData);
             } else {
-              console.warn(`❌ Unsupported UDP port: ${portRemote}`);
-              controller.error(new Error('Unsupported UDP port'));
+              controller.error(new Error('Authentication failed'));
             }
             return;
           }
 
-          try {
-            await HandleTCPOutBound(
-              remoteSocketWrapper,
-              addressType,
-              addressRemote,
-              portRemote,
-              rawClientData,
-              webSocket,
-              vlessResponseHeader,
-              log,
-              config,
-              (bytes) => { sessionUsage += bytes; }
-            );
-          } catch (e) {
-            console.error(`❌ TCP outbound handling failed: ${e.message}`);
-            controller.error(new Error('TCP connection failed'));
-          }
+          HandleTCPOutBound(
+            remoteSocketWrapper,
+            addressType,
+            addressRemote,
+            portRemote,
+            rawClientData,
+            webSocket,
+            vlessResponseHeader,
+            log,
+            config,
+            (bytes) => { sessionUsage += bytes; }
+          );
         },
         close() {
-          log('✅ ReadableWebSocketStream closed normally');
+          log('readableWebSocketStream closed');
           finalCleanup();
         },
         abort(err) {
-          log('❌ ReadableWebSocketStream aborted', err);
+          log('readableWebSocketStream aborted', err);
           finalCleanup();
         },
       }),
     )
     .catch(err => {
-      console.error('❌ Pipeline failed:', err.stack || err);
+      console.error('Pipeline failed:', err.stack || err);
       safeCloseWebSocket(webSocket);
       finalCleanup();
     });
@@ -1405,30 +3485,486 @@ async function ProtocolOverWSHandler(request, config, env, ctx) {
   return new Response(null, { status: 101, webSocket: client });
 }
 
-// Copy remaining protocol handler functions from original code:
-// - ProcessProtocolHeader
-// - HandleTCPOutBound
-// - MakeReadableWebSocketStream
-// - RemoteSocketToWS
-// - base64ToArrayBuffer
-// - safeCloseWebSocket
-// - createDnsPipeline
-// - parseIPv6
-// - socks5Connect
-// - socks5AddressParser
+async function ProcessProtocolHeader(protocolBuffer, env, ctx) {
+  if (protocolBuffer.byteLength < 24) {
+    return { hasError: true, message: 'invalid data' };
+  }
+  
+  const dataView = new DataView(protocolBuffer.buffer || protocolBuffer);
+  const version = dataView.getUint8(0);
 
-// All should be preserved exactly as in your original code
+  let uuid;
+  try {
+    uuid = stringify(new Uint8Array(protocolBuffer.slice(1, 17)));
+  } catch (e) {
+    return { hasError: true, message: 'invalid UUID format' };
+  }
+
+  const userData = await getUserData(env, uuid, ctx);
+  if (!userData) {
+    return { hasError: true, message: 'invalid user' };
+  }
+
+  const payloadStart = 17;
+  if (protocolBuffer.byteLength < payloadStart + 1) {
+    return { hasError: true, message: 'invalid data length' };
+  }
+
+  const optLength = dataView.getUint8(payloadStart);
+  const commandIndex = payloadStart + 1 + optLength;
+  
+  if (protocolBuffer.byteLength < commandIndex + 1) {
+    return { hasError: true, message: 'invalid data length (command)' };
+  }
+  
+  const command = dataView.getUint8(commandIndex);
+  if (command !== 1 && command !== 2) {
+    return { hasError: true, message: `command ${command} is not supported` };
+  }
+
+  const portIndex = commandIndex + 1;
+  if (protocolBuffer.byteLength < portIndex + 2) {
+    return { hasError: true, message: 'invalid data length (port)' };
+  }
+  
+  const portRemote = dataView.getUint16(portIndex, false);
+
+  const addressTypeIndex = portIndex + 2;
+  if (protocolBuffer.byteLength < addressTypeIndex + 1) {
+    return { hasError: true, message: 'invalid data length (address type)' };
+  }
+  
+  const addressType = dataView.getUint8(addressTypeIndex);
+
+  let addressValue, addressLength, addressValueIndex;
+
+  switch (addressType) {
+    case 1:
+      addressLength = 4;
+      addressValueIndex = addressTypeIndex + 1;
+      if (protocolBuffer.byteLength < addressValueIndex + addressLength) {
+        return { hasError: true, message: 'invalid data length (ipv4)' };
+      }
+      addressValue = new Uint8Array(protocolBuffer.slice(addressValueIndex, addressValueIndex + addressLength)).join('.');
+      break;
+      
+    case 2:
+      if (protocolBuffer.byteLength < addressTypeIndex + 2) {
+        return { hasError: true, message: 'invalid data length (domain length)' };
+      }
+      addressLength = dataView.getUint8(addressTypeIndex + 1);
+      addressValueIndex = addressTypeIndex + 2;
+      if (protocolBuffer.byteLength < addressValueIndex + addressLength) {
+        return { hasError: true, message: 'invalid data length (domain)' };
+      }
+      addressValue = new TextDecoder().decode(protocolBuffer.slice(addressValueIndex, addressValueIndex + addressLength));
+      break;
+      
+    case 3:
+      addressLength = 16;
+      addressValueIndex = addressTypeIndex + 1;
+      if (protocolBuffer.byteLength < addressValueIndex + addressLength) {
+        return { hasError: true, message: 'invalid data length (ipv6)' };
+      }
+      addressValue = Array.from({ length: 8 }, (_, i) => 
+        dataView.getUint16(addressValueIndex + i * 2, false).toString(16)
+      ).join(':');
+      break;
+      
+    default:
+      return { hasError: true, message: `invalid addressType: ${addressType}` };
+  }
+
+  const rawDataIndex = addressValueIndex + addressLength;
+  if (protocolBuffer.byteLength < rawDataIndex) {
+    return { hasError: true, message: 'invalid data length (raw data)' };
+  }
+
+  return {
+    user: userData,
+    hasError: false,
+    addressRemote: addressValue,
+    addressType,
+    portRemote,
+    rawDataIndex,
+    ProtocolVersion: new Uint8Array([version]),
+    isUDP: command === 2,
+  };
+}
+
+async function HandleTCPOutBound(
+  remoteSocket,
+  addressType,
+  addressRemote,
+  portRemote,
+  rawClientData,
+  webSocket,
+  protocolResponseHeader,
+  log,
+  config,
+  trafficCallback
+) {
+  async function connectAndWrite(address, port, socks = false) {
+    let tcpSocket;
+    if (config.socks5Relay) {
+      tcpSocket = await socks5Connect(addressType, address, port, log, config.parsedSocks5Address);
+    } else {
+      tcpSocket = socks
+        ? await socks5Connect(addressType, address, port, log, config.parsedSocks5Address)
+        : connect({ hostname: address, port: port });
+    }
+    remoteSocket.value = tcpSocket;
+    log(`connected to ${address}:${port}`);
+    const writer = tcpSocket.writable.getWriter();
+    await writer.write(rawClientData);
+    writer.releaseLock();
+    return tcpSocket;
+  }
+
+  async function retry() {
+    const tcpSocket = config.enableSocks
+      ? await connectAndWrite(addressRemote, portRemote, true)
+      : await connectAndWrite(
+          config.proxyIP || addressRemote,
+          config.proxyPort || portRemote,
+          false,
+        );
+
+    tcpSocket.closed
+      .catch(error => {
+        console.log('retry tcpSocket closed error', error);
+      })
+      .finally(() => {
+        safeCloseWebSocket(webSocket);
+      });
+    RemoteSocketToWS(tcpSocket, webSocket, protocolResponseHeader, null, log, trafficCallback);
+  }
+
+  const tcpSocket = await connectAndWrite(addressRemote, portRemote);
+  RemoteSocketToWS(tcpSocket, webSocket, protocolResponseHeader, retry, log, trafficCallback);
+}
+
+function MakeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
+  return new ReadableStream({
+    start(controller) {
+      webSocketServer.addEventListener('message', (event) => controller.enqueue(event.data));
+      webSocketServer.addEventListener('close', () => {
+        safeCloseWebSocket(webSocketServer);
+        controller.close();
+      });
+      webSocketServer.addEventListener('error', (err) => {
+        log('webSocketServer has error');
+        controller.error(err);
+      });
+      const { earlyData, error } = base64ToArrayBuffer(earlyDataHeader);
+      if (error) controller.error(error);
+      else if (earlyData) controller.enqueue(earlyData);
+    },
+    pull(_controller) { },
+    cancel(reason) {
+      log(`ReadableStream was canceled, due to ${reason}`);
+      safeCloseWebSocket(webSocketServer);
+    },
+  });
+}
+
+async function RemoteSocketToWS(remoteSocket, webSocket, protocolResponseHeader, retry, log, trafficCallback) {
+  let hasIncomingData = false;
+  await remoteSocket.readable
+    .pipeTo(
+      new WritableStream({
+        async write(chunk, controller) {
+          if (webSocket.readyState !== CONST.WS_READY_STATE_OPEN) {
+            controller.error(
+              'webSocket.readyState is not open, maybe close',
+            );
+            return;
+          }
+          hasIncomingData = true;
+          // remoteChunkCount++;
+          if (protocolResponseHeader) {
+            webSocket.send(
+              await new Blob([protocolResponseHeader, chunk]).arrayBuffer(),
+            );
+            protocolResponseHeader = null;
+          } else {
+            webSocket.send(chunk);
+          }
+        },
+        close() {
+          log(`remoteSocket.readable closed, hasIncomingData: ${hasIncomingData}`);
+        },
+        abort(reason) {
+          console.error('remoteSocket.readable abort', reason);
+        },
+      }),
+    )
+    .catch((error) => {
+      console.error(
+        'remoteSocket.readable pipeTo error',
+        error,
+      );
+      safeCloseWebSocket(webSocket);
+    });
+  return hasIncomingData;
+}
+
+function base64ToArrayBuffer(base64Str) {
+  if (!base64Str) return { earlyData: null, error: null };
+  try {
+    const binaryStr = atob(base64Str.replace(/-/g, '+').replace(/_/g, '/'));
+    const buffer = new ArrayBuffer(binaryStr.length);
+    const view = new Uint8Array(buffer);
+    for (let i = 0; i < binaryStr.length; i++) {
+      view[i] = binaryStr.charCodeAt(i);
+    }
+    return { earlyData: buffer, error: null };
+  } catch (error) {
+    return { earlyData: null, error };
+  }
+}
+
+function safeCloseWebSocket(socket) {
+  try {
+    if (
+      socket.readyState === CONST.WS_READY_STATE_OPEN ||
+      socket.readyState === CONST.WS_READY_STATE_CLOSING
+    ) {
+      socket.close();
+    }
+  } catch (error) {
+    console.error('safeCloseWebSocket error:', error);
+  }
+}
+
+async function createDnsPipeline(webSocket, vlessResponseHeader, log, trafficCallback) {
+  let isHeaderSent = false;
+  const transformStream = new TransformStream({
+    transform(chunk, controller) {
+      for (let index = 0; index < chunk.byteLength;) {
+        if (index + 2 > chunk.byteLength) break;
+        const lengthBuffer = chunk.slice(index, index + 2);
+        const udpPacketLength = new DataView(lengthBuffer).getUint16(0);
+        if (index + 2 + udpPacketLength > chunk.byteLength) break;
+        const udpData = new Uint8Array(chunk.slice(index + 2, index + 2 + udpPacketLength));
+        index = index + 2 + udpPacketLength;
+        controller.enqueue(udpData);
+      }
+    },
+  });
+
+  transformStream.readable
+    .pipeTo(
+      new WritableStream({
+        async write(chunk) {
+          try {
+            const resp = await fetch('https://1.1.1.1/dns-query', {
+              method: 'POST',
+              headers: { 'content-type': 'application/dns-message' },
+              body: chunk,
+            });
+            const dnsQueryResult = await resp.arrayBuffer();
+            const udpSize = dnsQueryResult.byteLength;
+            const udpSizeBuffer = new Uint8Array([(udpSize >> 8) & 0xff, udpSize & 0xff]);
+
+            if (webSocket.readyState === CONST.WS_READY_STATE_OPEN) {
+              log(`DNS query successful, length: ${udpSize}`);
+              let responseChunk;
+              if (isHeaderSent) {
+                responseChunk = await new Blob([udpSizeBuffer, dnsQueryResult]).arrayBuffer();
+              } else {
+                responseChunk = await new Blob([vlessResponseHeader, udpSizeBuffer, dnsQueryResult]).arrayBuffer();
+                isHeaderSent = true;
+              }
+              if (trafficCallback) {
+                trafficCallback(responseChunk.byteLength);
+              }
+              webSocket.send(responseChunk);
+            }
+          } catch (error) {
+            log('DNS query error: ' + error);
+          }
+        },
+      }),
+    )
+    .catch(e => {
+      log('DNS stream error: ' + e);
+    });
+
+  const writer = transformStream.writable.getWriter();
+  return {
+    write: (chunk) => writer.write(chunk),
+  };
+}
+
+function parseIPv6(ipv6) {
+    const buffer = new ArrayBuffer(16);
+    const view = new DataView(buffer);
+    
+    const parts = ipv6.split('::');
+    let left = parts[0] ? parts[0].split(':') : [];
+    let right = parts[1] ? parts[1].split(':') : [];
+    
+    if (left.length === 1 && left[0] === '') left = [];
+    if (right.length === 1 && right[0] === '') right = [];
+    
+    const missing = 8 - (left.length + right.length);
+    const expansion = [];
+    if (missing > 0) {
+        for (let i = 0; i < missing; i++) {
+            expansion.push('0000');
+        }
+    }
+    
+    const hextets = [...left, ...expansion, ...right];
+    
+    for (let i = 0; i < 8; i++) {
+        const val = parseInt(hextets[i] || '0', 16);
+        view.setUint16(i * 2, val, false);
+    }
+    
+    return new Uint8Array(buffer);
+}
+
+// @ts-ignore
+async function socks5Connect(addressType, addressRemote, portRemote, log, parsedSocks5Address) {
+  const { username, password, hostname, port } = parsedSocks5Address;
+  
+  let socket;
+  let reader;
+  let writer;
+  let success = false;
+
+  try {
+    socket = connect({ hostname, port });
+    reader = socket.readable.getReader();
+    writer = socket.writable.getWriter();
+    
+    const encoder = new TextEncoder();
+
+    await writer.write(new Uint8Array([5, 2, 0, 2]));
+    let res = (await reader.read()).value;
+    if (!res || res[0] !== 0x05 || res[1] === 0xff) {
+      throw new Error('SOCKS5 handshake failed. Server rejected methods.');
+    }
+
+    if (res[1] === 0x02) {
+      if (!username || !password) {
+        throw new Error('SOCKS5 server requires credentials, but none provided.');
+      }
+      const authRequest = new Uint8Array([
+        1,
+        username.length,
+        ...encoder.encode(username),
+        password.length,
+        ...encoder.encode(password)
+      ]);
+      await writer.write(authRequest);
+      res = (await reader.read()).value;
+      if (!res || res[0] !== 0x01 || res[1] !== 0x00) {
+        throw new Error(`SOCKS5 authentication failed (Code: ${res[1]})`);
+      }
+    }
+
+    let dstAddr;
+    switch (addressType) {
+      case 1:
+        dstAddr = new Uint8Array([1, ...addressRemote.split('.').map(Number)]);
+        break;
+      case 2:
+        dstAddr = new Uint8Array([3, addressRemote.length, ...encoder.encode(addressRemote)]);
+        break;
+      case 3:
+        const ipv6Bytes = parseIPv6(addressRemote);
+        if (ipv6Bytes.length !== 16) {
+          throw new Error(`Failed to parse IPv6 address: ${addressRemote}`);
+        }
+        dstAddr = new Uint8Array(1 + 16);
+        dstAddr[0] = 4;
+        dstAddr.set(ipv6Bytes, 1);
+        break;
+      default:
+        throw new Error(`Invalid address type: ${addressType}`);
+    }
+
+    const socksRequest = new Uint8Array([
+      5,
+      1,
+      0,
+      ...dstAddr,
+      portRemote >> 8,
+      portRemote & 0xff
+    ]);
+    await writer.write(socksRequest);
+    
+    res = (await reader.read()).value;
+    if (!res || res[1] !== 0x00) {
+      throw new Error(`SOCKS5 connection failed. Server responded with code: ${res[1]}`);
+    }
+
+    log(`SOCKS5 connection to ${addressRemote}:${portRemote} established.`);
+    success = true;
+    return socket;
+
+  } catch (err) {
+    log(`socks5Connect Error: ${err.message}`, err);
+    throw err;
+  } finally {
+    if (writer) writer.releaseLock();
+    if (reader) reader.releaseLock();
+    
+    if (!success && socket) {
+      try {
+        socket.abort();
+      } catch (e) {
+        log('Error aborting SOCKS5 socket during cleanup', e);
+      }
+    }
+  }
+}
+
+function socks5AddressParser(address) {
+  if (!address || typeof address !== 'string') {
+    throw new Error('Invalid SOCKS5 address format');
+  }
+  const [authPart, hostPart] = address.includes('@') ? address.split('@') : [null, address];
+  const lastColonIndex = hostPart.lastIndexOf(':');
+
+  if (lastColonIndex === -1) {
+    throw new Error('Invalid SOCKS5 address: missing port');
+  }
+  
+  let hostname;
+  if (hostPart.startsWith('[')) {
+      const closingBracketIndex = hostPart.lastIndexOf(']');
+      if (closingBracketIndex === -1 || closingBracketIndex > lastColonIndex) {
+          throw new Error('Invalid IPv6 SOCKS5 address format');
+      }
+      hostname = hostPart.substring(1, closingBracketIndex);
+  } else {
+      hostname = hostPart.substring(0, lastColonIndex);
+  }
+
+  const portStr = hostPart.substring(lastColonIndex + 1);
+  const port = parseInt(portStr, 10);
+  
+  if (!hostname || isNaN(port)) {
+    throw new Error('Invalid SOCKS5 address');
+  }
+
+  let username, password;
+  if (authPart) {
+    [username, password] = authPart.split(':');
+  }
+  
+  return { username, password, hostname, port };
+}
 
 // ============================================================================
-// HEALTH CHECK & AUTO-SWITCHING WITH ERROR RECOVERY
+// HEALTH CHECK & AUTO-SWITCHING (D1-based)
 // ============================================================================
 
 async function performHealthCheck(env, ctx) {
-  if (!env.DB) {
-    console.warn('⚠️ Health check skipped: Database not available');
-    return;
-  }
-  
   const proxyIps = env.PROXYIPS ? env.PROXYIPS.split(',').map(ip => ip.trim()) : Config.proxyIPs;
   
   const healthStmts = [];
@@ -1446,377 +3982,286 @@ async function performHealthCheck(env, ctx) {
       const response = await fetch(`https://${host}:${port}`, { signal: controller.signal });
       clearTimeout(timeoutId);
       
-      if (response.ok || response.status < 500) {
+      if (response.ok) {
         latency = Date.now() - start;
         isHealthy = 1;
-        console.log(`✅ Health check passed for ${ipPort}: ${latency}ms`);
       }
     } catch (e) {
-      console.warn(`⚠️ Health check failed for ${ipPort}: ${e.message}`);
+      console.error(`Health check failed for ${ipPort}: ${e.message}`);
     }
     
     healthStmts.push(
       env.DB.prepare(
         "INSERT OR REPLACE INTO proxy_health (ip_port, is_healthy, latency_ms, last_check) VALUES (?, ?, ?, ?)"
-      ).bind(ipPort, isHealthy, latency, Math.floor(Date.now() / 1000))
+      ).bind(ipPort, isHealthy, latency, Date.now())
     );
   }
   
-  try {
-    await env.DB.batch(healthStmts);
-    console.log('✅ Proxy health check completed successfully');
-  } catch (e) {
-    console.error(`❌ Failed to save health check results: ${e.message}`);
-  }
+  await env.DB.batch(healthStmts);
+  
+  console.log('Proxy health check completed.');
 }
 
 // ============================================================================
-// MAIN FETCH HANDLER - COMPLETELY REWRITTEN WITH BULLETPROOF ERROR HANDLING
+// MAIN FETCH HANDLER
 // ============================================================================
 
 export default {
   async fetch(request, env, ctx) {
-    // Wrap entire handler in try-catch to prevent Error 1101
+    await ensureTablesExist(env, ctx);  // Ensure tables on every fetch
+    
+    let cfg;
+    
     try {
-      // Initialize database tables with fallback
-      const tablesInitialized = await ensureTablesExist(env, ctx);
-      
-      if (!tablesInitialized && !env.DB) {
-        console.warn('⚠️ Running without database - Limited functionality');
-      }
-      
-      let cfg;
-      
-      try {
-        cfg = await Config.fromEnv(env);
-      } catch (err) {
-        console.error(`❌ Configuration Error: ${err.message}`);
-        const headers = new Headers();
-        addSecurityHeaders(headers, null, {});
-        return new Response(`Configuration Error: ${err.message}`, { status: 503, headers });
-      }
-
-      const url = new URL(request.url);
-      const clientIp = request.headers.get('CF-Connecting-IP');
-
-      const adminPrefix = env.ADMIN_PATH_PREFIX || 'admin';
-      
-      // Admin routes
-      if (url.pathname.startsWith(`/${adminPrefix}/`)) {
-        try {
-          return await handleAdminRequest(request, env, ctx, adminPrefix);
-        } catch (e) {
-          console.error(`❌ Admin request handler error: ${e.message}`);
-          const headers = new Headers();
-          addSecurityHeaders(headers, null, {});
-          return new Response('Admin panel error occurred', { status: 500, headers });
-        }
-      }
-
-      // Health endpoint
-      if (url.pathname === '/health') {
-        const headers = new Headers();
-        addSecurityHeaders(headers, null, {});
-        return new Response('OK', { status: 200, headers });
-      }
-
-      // Health Check Endpoint for Cron
-      if (url.pathname === '/health-check' && request.method === 'GET') {
-        try {
-          await performHealthCheck(env, ctx);
-          const headers = new Headers();
-          addSecurityHeaders(headers, null, {});
-          return new Response('Health check performed', { status: 200, headers });
-        } catch (e) {
-          console.error(`❌ Health check error: ${e.message}`);
-          const headers = new Headers();
-          addSecurityHeaders(headers, null, {});
-          return new Response('Health check failed', { status: 500, headers });
-        }
-      }
-
-      // User API endpoint
-      if (url.pathname.startsWith('/api/user/')) {
-        const uuid = url.pathname.substring('/api/user/'.length);
-        const headers = new Headers({ 'Content-Type': 'application/json' });
-        addSecurityHeaders(headers, null, {});
-        
-        if (request.method !== 'GET') {
-          return new Response(JSON.stringify({ error: 'Method Not Allowed' }), { status: 405, headers });
-        }
-        
-        if (!isValidUUID(uuid)) {
-          return new Response(JSON.stringify({ error: 'Invalid UUID' }), { status: 400, headers });
-        }
-        
-        try {
-          const userData = await getUserData(env, uuid, ctx);
-          if (!userData) {
-            return new Response(JSON.stringify({ error: 'User not found' }), { status: 404, headers });
-          }
-          
-          return new Response(JSON.stringify({
-            traffic_used: userData.traffic_used || 0,
-            traffic_limit: userData.traffic_limit,
-            expiration_date: userData.expiration_date,
-            expiration_time: userData.expiration_time,
-            status: isExpired(userData.expiration_date, userData.expiration_time) ? 'Expired' : 'Active'
-          }), { status: 200, headers });
-        } catch (e) {
-          console.error(`❌ User API error: ${e.message}`);
-          return new Response(JSON.stringify({ error: 'Internal server error' }), { status: 500, headers });
-        }
-      }
-
-      // Favicon
-      if (url.pathname === '/favicon.ico') {
-        return new Response(null, {
-          status: 301,
-          headers: { Location: 'https://www.google.com/favicon.ico' }
-        });
-      }
-
-      // WebSocket upgrade for VLESS protocol
-      const upgradeHeader = request.headers.get('Upgrade');
-      if (upgradeHeader?.toLowerCase() === 'websocket') {
-        if (!env.DB) {
-          console.warn('⚠️ WebSocket connection without database - Proceeding with limited functionality');
-        }
-        
-        try {
-          // Domain Fronting: Set random Host header
-          const hostHeaders = env.HOST_HEADERS ? env.HOST_HEADERS.split(',').map(h => h.trim()) : ['speed.cloudflare.com'];
-          const evasionHost = pick(hostHeaders);
-          const newHeaders = new Headers(request.headers);
-          newHeaders.set('Host', evasionHost);
-          const newRequest = new Request(request, { headers: newHeaders });
-          
-          const requestConfig = {
-            userID: cfg.userID,
-            proxyIP: cfg.proxyIP,
-            proxyPort: cfg.proxyPort,
-            socks5Address: cfg.socks5.address,
-            socks5Relay: cfg.socks5.relayMode,
-            enableSocks: cfg.socks5.enabled,
-            parsedSocks5Address: cfg.socks5.enabled ? socks5AddressParser(cfg.socks5.address) : {},
-            scamalytics: cfg.scamalytics,
-          };
-          
-          const wsResponse = await ProtocolOverWSHandler(newRequest, requestConfig, env, ctx);
-          
-          const headers = new Headers(wsResponse.headers);
-          addSecurityHeaders(headers, null, {});
-          
-          return new Response(wsResponse.body, { status: wsResponse.status, webSocket: wsResponse.webSocket, headers });
-        } catch (e) {
-          console.error(`❌ WebSocket handler error: ${e.message}`);
-          const headers = new Headers();
-          addSecurityHeaders(headers, null, {});
-          return new Response('WebSocket connection failed', { status: 500, headers });
-        }
-      }
-
-      // Subscription endpoints
-      const handleSubscription = async (core) => {
-        try {
-          if (env.DB) {
-            const rateLimitKey = `user_path_rate:${clientIp}`;
-            if (await checkRateLimit(env.DB, rateLimitKey, CONST.USER_PATH_RATE_LIMIT, CONST.USER_PATH_RATE_TTL)) {
-              const headers = new Headers();
-              addSecurityHeaders(headers, null, {});
-              return new Response('Rate limit exceeded', { status: 429, headers });
-            }
-          }
-
-          const uuid = url.pathname.substring(`/${core}/`.length);
-          if (!isValidUUID(uuid)) {
-            const headers = new Headers();
-            addSecurityHeaders(headers, null, {});
-            return new Response('Invalid UUID', { status: 400, headers });
-          }
-          
-          if (env.DB) {
-            const userData = await getUserData(env, uuid, ctx);
-            if (!userData) {
-              const headers = new Headers();
-              addSecurityHeaders(headers, null, {});
-              return new Response('User not found', { status: 404, headers });
-            }
-            
-            if (isExpired(userData.expiration_date, userData.expiration_time)) {
-              const headers = new Headers();
-              addSecurityHeaders(headers, null, {});
-              return new Response('Account expired', { status: 403, headers });
-            }
-            
-            if (userData.traffic_limit && userData.traffic_limit > 0 && 
-                (userData.traffic_used || 0) >= userData.traffic_limit) {
-              const headers = new Headers();
-              addSecurityHeaders(headers, null, {});
-              return new Response('Traffic limit exceeded', { status: 403, headers });
-            }
-          }
-          
-          return await handleIpSubscription(core, uuid, url.hostname);
-        } catch (e) {
-          console.error(`❌ Subscription handler error: ${e.message}`);
-          const headers = new Headers();
-          addSecurityHeaders(headers, null, {});
-          return new Response('Subscription generation failed', { status: 500, headers });
-        }
-      };
-
-      if (url.pathname.startsWith('/xray/')) {
-        return await handleSubscription('xray');
-      }
-      
-      if (url.pathname.startsWith('/sb/')) {
-        return await handleSubscription('sb');
-      }
-
-      // User panel by UUID
-      const path = url.pathname.slice(1);
-      if (isValidUUID(path)) {
-        try {
-          if (env.DB) {
-            const rateLimitKey = `user_path_rate:${clientIp}`;
-            if (await checkRateLimit(env.DB, rateLimitKey, CONST.USER_PATH_RATE_LIMIT, CONST.USER_PATH_RATE_TTL)) {
-              const headers = new Headers();
-              addSecurityHeaders(headers, null, {});
-              return new Response('Rate limit exceeded', { status: 429, headers });
-            }
-
-            const userData = await getUserData(env, path, ctx);
-            if (!userData) {
-              const headers = new Headers();
-              addSecurityHeaders(headers, null, {});
-              return new Response('User not found', { status: 404, headers });
-            }
-            
-            // Return user panel (copy full handleUserPanel function call from original)
-            return await handleUserPanel(request, path, url.hostname, cfg.proxyAddress, userData, clientIp);
-          } else {
-            const headers = new Headers();
-            addSecurityHeaders(headers, null, {});
-            return new Response('User panel requires database', { status: 503, headers });
-          }
-        } catch (e) {
-          console.error(`❌ User panel error: ${e.message}`);
-          const headers = new Headers();
-          addSecurityHeaders(headers, null, {});
-          return new Response('User panel error occurred', { status: 500, headers });
-        }
-      }
-
-      // Reverse proxy for ROOT_PROXY_URL
-      if (env.ROOT_PROXY_URL) {
-        try {
-          let proxyUrl;
-          try {
-            proxyUrl = new URL(env.ROOT_PROXY_URL);
-          } catch (urlError) {
-            console.error(`❌ Invalid ROOT_PROXY_URL: ${env.ROOT_PROXY_URL}`, urlError);
-            const headers = new Headers();
-            addSecurityHeaders(headers, null, {});
-            return new Response('Proxy configuration error', { status: 500, headers });
-          }
-
-          const targetUrl = new URL(request.url);
-          targetUrl.hostname = proxyUrl.hostname;
-          targetUrl.protocol = proxyUrl.protocol;
-          if (proxyUrl.port) {
-            targetUrl.port = proxyUrl.port;
-          }
-          
-          const newRequest = new Request(targetUrl.toString(), {
-            method: request.method,
-            headers: request.headers,
-            body: request.body,
-            redirect: 'manual'
-          });
-          
-          newRequest.headers.set('Host', proxyUrl.hostname);
-          newRequest.headers.set('X-Forwarded-For', clientIp);
-          newRequest.headers.set('X-Forwarded-Proto', targetUrl.protocol.replace(':', ''));
-          newRequest.headers.set('X-Real-IP', clientIp);
-          
-          const response = await fetch(newRequest);
-          const mutableHeaders = new Headers(response.headers);
-          
-          mutableHeaders.delete('content-security-policy-report-only');
-          mutableHeaders.delete('x-frame-options');
-          
-          if (!mutableHeaders.has('Content-Security-Policy')) {
-            mutableHeaders.set('Content-Security-Policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: *; frame-ancestors 'self';");
-          }
-          if (!mutableHeaders.has('X-Frame-Options')) {
-            mutableHeaders.set('X-Frame-Options', 'SAMEORIGIN');
-          }
-          if (!mutableHeaders.has('Strict-Transport-Security')) {
-            mutableHeaders.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-          }
-          if (!mutableHeaders.has('X-Content-Type-Options')) {
-            mutableHeaders.set('X-Content-Type-Options', 'nosniff');
-          }
-          if (!mutableHeaders.has('Referrer-Policy')) {
-            mutableHeaders.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-          }
-          
-          mutableHeaders.set('alt-svc', 'h3=":443"; ma=0');
-          
-          return new Response(response.body, {
-            status: response.status,
-            statusText: response.statusText,
-            headers: mutableHeaders
-          });
-        } catch (e) {
-          console.error(`❌ Reverse Proxy Error: ${e.message}`, e.stack);
-          const headers = new Headers();
-          addSecurityHeaders(headers, null, {});
-          return new Response(`Proxy error: ${e.message}`, { status: 502, headers });
-        }
-      }
-
-      // Default masquerade page
-      const masqueradeHtml = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Welcome to nginx!</title>
-          <style>
-            body { width: 35em; margin: 0 auto; font-family: Tahoma, Verdana, Arial, sans-serif; }
-          </style>
-        </head>
-        <body>
-          <h1>Welcome to nginx!</h1>
-          <p>If you see this page, the nginx web server is successfully installed and working. Further configuration is required.</p>
-          <p>For online documentation and support please refer to <a href="http://nginx.org/">nginx.org</a>.</p>
-          <p><em>Thank you for using nginx.</em></p>
-        </body>
-        </html>
-      `;
-      const headers = new Headers({ 'Content-Type': 'text/html' });
+      cfg = await Config.fromEnv(env);
+    } catch (err) {
+      console.error(`Configuration Error: ${err.message}`);
+      const headers = new Headers();
       addSecurityHeaders(headers, null, {});
-      return new Response(masqueradeHtml, { headers });
-      
-    } catch (error) {
-      // Ultimate error handler - prevents Error 1101
-      console.error(`❌ CRITICAL ERROR IN MAIN HANDLER: ${error.message}`, error.stack);
-      
-      const headers = new Headers({ 'Content-Type': 'text/html' });
-      addSecurityHeaders(headers, null, {});
-      
-      // Return a safe error page instead of throwing
-      return new Response(`
-        <!DOCTYPE html>
-        <html>
-        <head><title>Service Temporarily Unavailable</title></head>
-        <body>
-          <h1>Service Temporarily Unavailable</h1>
-          <p>We're experiencing technical difficulties. Please try again in a few moments.</p>
-        </body>
-        </html>
-      `, { status: 503, headers });
+      return new Response(`Configuration Error: ${err.message}`, { status: 503, headers });
     }
+
+    const url = new URL(request.url);
+    const clientIp = request.headers.get('CF-Connecting-IP');
+
+    const adminPrefix = env.ADMIN_PATH_PREFIX || 'admin';
+    
+    if (url.pathname.startsWith(`/${adminPrefix}/`)) {
+      return await handleAdminRequest(request, env, ctx, adminPrefix);
+    }
+
+    if (url.pathname === '/health') {
+      const headers = new Headers();
+      addSecurityHeaders(headers, null, {});
+      return new Response('OK', { status: 200, headers });
+    }
+
+    // Health Check Endpoint for Cron
+    if (url.pathname === '/health-check' && request.method === 'GET') {
+      await performHealthCheck(env, ctx);
+      const headers = new Headers();
+      addSecurityHeaders(headers, null, {});
+      return new Response('Health check performed', { status: 200, headers });
+    }
+
+    if (url.pathname.startsWith('/api/user/')) {
+      const uuid = url.pathname.substring('/api/user/'.length);
+      const headers = new Headers({ 'Content-Type': 'application/json' });
+      addSecurityHeaders(headers, null, {});
+      if (request.method !== 'GET') {
+        return new Response(JSON.stringify({ error: 'Method Not Allowed' }), { status: 405, headers });
+      }
+      if (!isValidUUID(uuid)) {
+        return new Response(JSON.stringify({ error: 'Invalid UUID' }), { status: 400, headers });
+      }
+      const userData = await getUserData(env, uuid, ctx);
+      if (!userData) {
+        return new Response(JSON.stringify({ error: 'Authentication failed' }), { status: 403, headers });
+      }
+      return new Response(JSON.stringify({
+        traffic_used: userData.traffic_used || 0,
+        traffic_limit: userData.traffic_limit,
+        expiration_date: userData.expiration_date,
+        expiration_time: userData.expiration_time
+      }), { status: 200, headers });
+    }
+
+    if (url.pathname === '/favicon.ico') {
+      return new Response(null, {
+        status: 301,
+        headers: {
+          Location: 'https://www.google.com/favicon.ico'
+        }
+      });
+    }
+
+    const upgradeHeader = request.headers.get('Upgrade');
+    if (upgradeHeader?.toLowerCase() === 'websocket') {
+      if (!env.DB) {
+        const headers = new Headers();
+        addSecurityHeaders(headers, null, {});
+        return new Response('Service not configured properly', { status: 503, headers });
+      }
+      
+      // Domain Fronting: Set random Host header from HOST_HEADERS
+      const hostHeaders = env.HOST_HEADERS ? env.HOST_HEADERS.split(',').map(h => h.trim()) : ['speed.cloudflare.com'];
+      const evasionHost = pick(hostHeaders);
+      const newHeaders = new Headers(request.headers);
+      newHeaders.set('Host', evasionHost);
+      const newRequest = new Request(request, { headers: newHeaders });
+      
+      const requestConfig = {
+        userID: cfg.userID,
+        proxyIP: cfg.proxyIP,
+        proxyPort: cfg.proxyPort,
+        socks5Address: cfg.socks5.address,
+        socks5Relay: cfg.socks5.relayMode,
+        enableSocks: cfg.socks5.enabled,
+        parsedSocks5Address: cfg.socks5.enabled ? socks5AddressParser(cfg.socks5.address) : {},
+        scamalytics: cfg.scamalytics,
+      };
+      
+      const wsResponse = await ProtocolOverWSHandler(newRequest, requestConfig, env, ctx);
+      
+      const headers = new Headers(wsResponse.headers);
+      addSecurityHeaders(headers, null, {});
+      
+      return new Response(wsResponse.body, { status: wsResponse.status, webSocket: wsResponse.webSocket, headers });
+    }
+
+    const handleSubscription = async (core) => {
+      const rateLimitKey = `user_path_rate:${clientIp}`;
+      if (await checkRateLimit(env.DB, rateLimitKey, CONST.USER_PATH_RATE_LIMIT, CONST.USER_PATH_RATE_TTL)) {
+        const headers = new Headers();
+        addSecurityHeaders(headers, null, {});
+        return new Response('Rate limit exceeded', { status: 429, headers });
+      }
+
+      const uuid = url.pathname.substring(`/${core}/`.length);
+      if (!isValidUUID(uuid)) {
+        const headers = new Headers();
+        addSecurityHeaders(headers, null, {});
+        return new Response('Invalid UUID', { status: 400, headers });
+      }
+      
+      const userData = await getUserData(env, uuid, ctx);
+      if (!userData) {
+        const headers = new Headers();
+        addSecurityHeaders(headers, null, {});
+        return new Response('Authentication failed', { status: 403, headers });
+      }
+      
+      if (isExpired(userData.expiration_date, userData.expiration_time)) {
+        const headers = new Headers();
+        addSecurityHeaders(headers, null, {});
+        return new Response('Authentication failed', { status: 403, headers });
+      }
+      
+      if (userData.traffic_limit && userData.traffic_limit > 0 && 
+          (userData.traffic_used || 0) >= userData.traffic_limit) {
+        const headers = new Headers();
+        addSecurityHeaders(headers, null, {});
+        return new Response('Authentication failed', { status: 403, headers });
+      }
+      
+      return await handleIpSubscription(core, uuid, url.hostname);
+    };
+
+    if (url.pathname.startsWith('/xray/')) {
+      return await handleSubscription('xray');
+    }
+    
+    if (url.pathname.startsWith('/sb/')) {
+      return await handleSubscription('sb');
+    }
+
+    const path = url.pathname.slice(1);
+    if (isValidUUID(path)) {
+      const rateLimitKey = `user_path_rate:${clientIp}`;
+      if (await checkRateLimit(env.DB, rateLimitKey, CONST.USER_PATH_RATE_LIMIT, CONST.USER_PATH_RATE_TTL)) {
+        const headers = new Headers();
+        addSecurityHeaders(headers, null, {});
+        return new Response('Rate limit exceeded', { status: 429, headers });
+      }
+
+      const userData = await getUserData(env, path, ctx);
+      if (!userData) {
+        const headers = new Headers();
+        addSecurityHeaders(headers, null, {});
+        return new Response('Authentication failed', { status: 403, headers });
+      }
+      
+      return await handleUserPanel(request, path, url.hostname, cfg.proxyAddress, userData, clientIp);
+    }
+
+    if (env.ROOT_PROXY_URL) {
+      try {
+        let proxyUrl;
+        try {
+          proxyUrl = new URL(env.ROOT_PROXY_URL);
+        } catch (urlError) {
+          console.error(`Invalid ROOT_PROXY_URL: ${env.ROOT_PROXY_URL}`, urlError);
+          const headers = new Headers();
+          addSecurityHeaders(headers, null, {});
+          return new Response('Proxy configuration error: Invalid URL format', { status: 500, headers });
+        }
+
+        const targetUrl = new URL(request.url);
+        targetUrl.hostname = proxyUrl.hostname;
+        targetUrl.protocol = proxyUrl.protocol;
+        if (proxyUrl.port) {
+          targetUrl.port = proxyUrl.port;
+        }
+        
+        const newRequest = new Request(targetUrl.toString(), {
+          method: request.method,
+          headers: request.headers,
+          body: request.body,
+          redirect: 'manual'
+        });
+        
+        newRequest.headers.set('Host', proxyUrl.hostname);
+        newRequest.headers.set('X-Forwarded-For', clientIp);
+        newRequest.headers.set('X-Forwarded-Proto', targetUrl.protocol.replace(':', ''));
+        newRequest.headers.set('X-Real-IP', clientIp);
+        
+        const response = await fetch(newRequest);
+        const mutableHeaders = new Headers(response.headers);
+        
+        mutableHeaders.delete('content-security-policy-report-only');
+        mutableHeaders.delete('x-frame-options');
+        
+        if (!mutableHeaders.has('Content-Security-Policy')) {
+          mutableHeaders.set('Content-Security-Policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: *; frame-ancestors 'self';");
+        }
+        if (!mutableHeaders.has('X-Frame-Options')) {
+          mutableHeaders.set('X-Frame-Options', 'SAMEORIGIN');
+        }
+        if (!mutableHeaders.has('Strict-Transport-Security')) {
+          mutableHeaders.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+        }
+        if (!mutableHeaders.has('X-Content-Type-Options')) {
+          mutableHeaders.set('X-Content-Type-Options', 'nosniff');
+        }
+        if (!mutableHeaders.has('Referrer-Policy')) {
+          mutableHeaders.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+        }
+        
+        mutableHeaders.set('alt-svc', 'h3=":443"; ma=0');
+        
+        return new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: mutableHeaders
+        });
+      } catch (e) {
+        console.error(`Reverse Proxy Error: ${e.message}`, e.stack);
+        const headers = new Headers();
+        addSecurityHeaders(headers, null, {});
+        return new Response(`Proxy error: ${e.message}`, { status: 502, headers });
+      }
+    }
+
+    // Masquerade: Show generic HTML if directly visited
+    const masqueradeHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Welcome to nginx!</title>
+        <style>
+          body { width: 35em; margin: 0 auto; font-family: Tahoma, Verdana, Arial, sans-serif; }
+        </style>
+      </head>
+      <body>
+        <h1>Welcome to nginx!</h1>
+        <p>If you see this page, the nginx web server is successfully installed and working. Further configuration is required.</p>
+        <p>For online documentation and support please refer to <a href="http://nginx.org/">nginx.org</a>.</p>
+        <p><em>Thank you for using nginx.</em></p>
+      </body>
+      </html>
+    `;
+    const headers = new Headers({ 'Content-Type': 'text/html' });
+    addSecurityHeaders(headers, null, {});
+    return new Response(masqueradeHtml, { headers });
   },
-};
+}
