@@ -250,37 +250,46 @@ async function kvDelete(db, key) {
 }
 
 async function getUserData(env, uuid, ctx) {
-  if (!isValidUUID(uuid)) return null;
-  if (!env.DB) {
-    console.error("D1 binding missing");
+  try {
+    if (!isValidUUID(uuid)) return null;
+    if (!env.DB) {
+      console.error("D1 binding missing");
+      return null;
+    }
+    
+    const cacheKey = `user:${uuid}`;
+    
+    try {
+      const cachedData = await kvGet(env.DB, cacheKey, 'json');
+      if (cachedData && cachedData.uuid) return cachedData;
+    } catch (e) {
+      console.error(`Failed to get cached data for ${uuid}`, e);
+    }
+
+    const userFromDb = await env.DB.prepare("SELECT * FROM users WHERE uuid = ?").bind(uuid).first();
+    if (!userFromDb) return null;
+    
+    const cachePromise = kvPut(env.DB, cacheKey, userFromDb, { expirationTtl: 3600 });
+    
+    if (ctx) {
+      ctx.waitUntil(cachePromise);
+    } else {
+      await cachePromise;
+    }
+    
+    return userFromDb;
+  } catch (e) {
+    console.error(`getUserData error for ${uuid}: ${e.message}`);
     return null;
   }
-  
-  const cacheKey = `user:${uuid}`;
-  
-  try {
-    const cachedData = await kvGet(env.DB, cacheKey, 'json');
-    if (cachedData && cachedData.uuid) return cachedData;
-  } catch (e) {
-    console.error(`Failed to get cached data for ${uuid}`, e);
-  }
-
-  const userFromDb = await env.DB.prepare("SELECT * FROM users WHERE uuid = ?").bind(uuid).first();
-  if (!userFromDb) return null;
-  
-  const cachePromise = kvPut(env.DB, cacheKey, userFromDb, { expirationTtl: 3600 });
-  
-  if (ctx) {
-    ctx.waitUntil(cachePromise);
-  } else {
-    await cachePromise;
-  }
-  
-  return userFromDb;
 }
 
 async function updateUsage(env, uuid, bytes, ctx) {
   if (bytes <= 0 || !uuid) return;
+  if (!env.DB) {
+    console.error("updateUsage: D1 binding missing");
+    return;
+  }
   
   const usageLockKey = `usage_lock:${uuid}`;
   let lockAcquired = false;
@@ -313,7 +322,11 @@ async function updateUsage(env, uuid, bytes, ctx) {
     console.error(`Failed to update usage for ${uuid}:`, err);
   } finally {
     if (lockAcquired) {
-      await kvDelete(env.DB, usageLockKey);
+      try {
+        await kvDelete(env.DB, usageLockKey);
+      } catch (e) {
+        console.error(`Failed to release lock for ${uuid}:`, e);
+      }
     }
   }
 }
@@ -456,11 +469,30 @@ async function hashSHA256(str) {
 }
 
 async function checkRateLimit(db, key, limit, ttl) {
-  const countStr = await kvGet(db, key);
-  const count = parseInt(countStr, 10) || 0;
-  if (count >= limit) return true;
-  await kvPut(db, key, (count + 1).toString(), { expirationTtl: ttl });
-  return false;
+  if (!db) return false;
+  try {
+    const countStr = await kvGet(db, key);
+    const count = parseInt(countStr, 10) || 0;
+    if (count >= limit) return true;
+    await kvPut(db, key, (count + 1).toString(), { expirationTtl: ttl });
+    return false;
+  } catch (e) {
+    console.error(`checkRateLimit error for ${key}: ${e}`);
+    return false;
+  }
+}
+
+async function safeDbOperation(db, operation, fallback = null) {
+  if (!db) {
+    console.error('Database binding not available');
+    return fallback;
+  }
+  try {
+    return await operation();
+  } catch (e) {
+    console.error(`Database operation failed: ${e.message}`);
+    return fallback;
+  }
 }
 
 // ============================================================================
@@ -1332,42 +1364,45 @@ async function isAdmin(request, env) {
 }
 
 async function ensureTablesExist(env, ctx) {
-  if (!env.DB) return; // Skip if no D1
-  
-  const createTables = [
-    `CREATE TABLE IF NOT EXISTS users (
-      uuid TEXT PRIMARY KEY,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      expiration_date TEXT NOT NULL,
-      expiration_time TEXT NOT NULL,
-      notes TEXT,
-      traffic_limit INTEGER,
-      traffic_used INTEGER DEFAULT 0,
-      ip_limit INTEGER DEFAULT -1
-    )`,
-    `CREATE TABLE IF NOT EXISTS user_ips (
-      uuid TEXT,
-      ip TEXT,
-      last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (uuid, ip),
-      FOREIGN KEY (uuid) REFERENCES users(uuid) ON DELETE CASCADE
-    )`,
-    `CREATE TABLE IF NOT EXISTS key_value (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      expiration INTEGER
-    )`,
-    `CREATE TABLE IF NOT EXISTS proxy_health (
-      ip_port TEXT PRIMARY KEY,
-      is_healthy INTEGER NOT NULL,
-      latency_ms INTEGER,
-      last_check INTEGER DEFAULT (strftime('%s', 'now'))
-    )`
-  ];
-  
-  const stmts = createTables.map(sql => env.DB.prepare(sql));
+  if (!env.DB) {
+    console.warn('ensureTablesExist: D1 binding not available, skipping table creation');
+    return;
+  }
   
   try {
+    const createTables = [
+      `CREATE TABLE IF NOT EXISTS users (
+        uuid TEXT PRIMARY KEY,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        expiration_date TEXT NOT NULL,
+        expiration_time TEXT NOT NULL,
+        notes TEXT,
+        traffic_limit INTEGER,
+        traffic_used INTEGER DEFAULT 0,
+        ip_limit INTEGER DEFAULT -1
+      )`,
+      `CREATE TABLE IF NOT EXISTS user_ips (
+        uuid TEXT,
+        ip TEXT,
+        last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (uuid, ip),
+        FOREIGN KEY (uuid) REFERENCES users(uuid) ON DELETE CASCADE
+      )`,
+      `CREATE TABLE IF NOT EXISTS key_value (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        expiration INTEGER
+      )`,
+      `CREATE TABLE IF NOT EXISTS proxy_health (
+        ip_port TEXT PRIMARY KEY,
+        is_healthy INTEGER NOT NULL,
+        latency_ms INTEGER,
+        last_check INTEGER DEFAULT (strftime('%s', 'now'))
+      )`
+    ];
+    
+    const stmts = createTables.map(sql => env.DB.prepare(sql));
+    
     await env.DB.batch(stmts);
     console.log('D1 tables ensured/created successfully');
   } catch (e) {
@@ -1377,17 +1412,18 @@ async function ensureTablesExist(env, ctx) {
 }
 
 async function handleAdminRequest(request, env, ctx, adminPrefix) {
-  await ensureTablesExist(env, ctx);  // Ensure tables on admin access
-  
-  const url = new URL(request.url);
-  const jsonHeader = { 'Content-Type': 'application/json' };
-  const htmlHeaders = new Headers({ 'Content-Type': 'text/html;charset=utf-8' });
-  const clientIp = request.headers.get('CF-Connecting-IP');
+  try {
+    await ensureTablesExist(env, ctx);  // Ensure tables on admin access
+    
+    const url = new URL(request.url);
+    const jsonHeader = { 'Content-Type': 'application/json' };
+    const htmlHeaders = new Headers({ 'Content-Type': 'text/html;charset=utf-8' });
+    const clientIp = request.headers.get('CF-Connecting-IP');
 
-  if (!env.ADMIN_KEY) {
-    addSecurityHeaders(htmlHeaders, null, {});
-    return new Response('Admin panel is not configured.', { status: 503, headers: htmlHeaders });
-  }
+    if (!env.ADMIN_KEY) {
+      addSecurityHeaders(htmlHeaders, null, {});
+      return new Response('Admin panel is not configured.', { status: 503, headers: htmlHeaders });
+    }
 
   if (env.ADMIN_IP_WHITELIST) {
     const allowedIps = env.ADMIN_IP_WHITELIST.split(',').map(ip => ip.trim());
@@ -1712,6 +1748,12 @@ async function handleAdminRequest(request, env, ctx, adminPrefix) {
   const headers = new Headers();
   addSecurityHeaders(headers, null, {});
   return new Response('Not found', { status: 404, headers });
+  } catch (e) {
+    console.error('handleAdminRequest error:', e.message, e.stack);
+    const headers = new Headers();
+    addSecurityHeaders(headers, null, {});
+    return new Response('Internal Server Error', { status: 500, headers });
+  }
 }
 
 // ============================================================================
@@ -1773,10 +1815,11 @@ async function getGeo(ip) {
 }
 
 async function handleUserPanel(request, userID, hostName, proxyAddress, userData, clientIp) {
-  const subXrayUrl = `https://${hostName}/xray/${userID}`;
-  const subSbUrl = `https://${hostName}/sb/${userID}`;
-  
-  const singleXrayConfig = buildLink({ core:'xray', proto: 'tls', userID, hostName, address: hostName, port: 443, tag: 'Main'  });
+  try {
+    const subXrayUrl = `https://${hostName}/xray/${userID}`;
+    const subSbUrl = `https://${hostName}/sb/${userID}`;
+    
+    const singleXrayConfig = buildLink({ core:'xray', proto: 'tls', userID, hostName, address: hostName, port: 443, tag: 'Main'  });
   
   const singleSingboxConfig = buildLink({ core: 'sb', proto: 'tls', userID, hostName, address: hostName, port: 443, tag: 'Main' });
 
@@ -3318,6 +3361,12 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
   finalHtml = finalHtml.replace('window.CLIENT_IP = null;', `window.CLIENT_IP = "${clientIp}";`);
 
   return new Response(finalHtml, { headers });
+  } catch (e) {
+    console.error('handleUserPanel error:', e.message, e.stack);
+    const headers = new Headers();
+    addSecurityHeaders(headers, null, {});
+    return new Response('Internal Server Error', { status: 500, headers });
+  }
 }
 
 // ============================================================================
@@ -3325,13 +3374,16 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
 // ============================================================================
 
 async function ProtocolOverWSHandler(request, config, env, ctx) {
-  const clientIp = request.headers.get('CF-Connecting-IP');
-  if (await isSuspiciousIP(clientIp, config.scamalytics, env.SCAMALYTICS_THRESHOLD || CONST.SCAMALYTICS_THRESHOLD)) {
-    return new Response('Access denied', { status: 403 });
-  }
+  let webSocket = null;
+  try {
+    const clientIp = request.headers.get('CF-Connecting-IP');
+    if (await isSuspiciousIP(clientIp, config.scamalytics, env.SCAMALYTICS_THRESHOLD || CONST.SCAMALYTICS_THRESHOLD)) {
+      return new Response('Access denied', { status: 403 });
+    }
 
-  const webSocketPair = new WebSocketPair();
-  const [client, webSocket] = Object.values(webSocketPair);
+    const webSocketPair = new WebSocketPair();
+    const [client, webSocket_inner] = Object.values(webSocketPair);
+    webSocket = webSocket_inner;
   webSocket.accept();
 
   let address = '';
@@ -3483,12 +3535,26 @@ async function ProtocolOverWSHandler(request, config, env, ctx) {
     });
 
   return new Response(null, { status: 101, webSocket: client });
+  } catch (e) {
+    console.error('ProtocolOverWSHandler error:', e.message, e.stack);
+    if (webSocket) {
+      try {
+        safeCloseWebSocket(webSocket);
+      } catch (closeErr) {
+        console.error('Error closing WebSocket:', closeErr);
+      }
+    }
+    const headers = new Headers();
+    addSecurityHeaders(headers, null, {});
+    return new Response('Internal Server Error', { status: 500, headers });
+  }
 }
 
 async function ProcessProtocolHeader(protocolBuffer, env, ctx) {
-  if (protocolBuffer.byteLength < 24) {
-    return { hasError: true, message: 'invalid data' };
-  }
+  try {
+    if (protocolBuffer.byteLength < 24) {
+      return { hasError: true, message: 'invalid data' };
+    }
   
   const dataView = new DataView(protocolBuffer.buffer || protocolBuffer);
   const version = dataView.getUint8(0);
@@ -3590,6 +3656,10 @@ async function ProcessProtocolHeader(protocolBuffer, env, ctx) {
     ProtocolVersion: new Uint8Array([version]),
     isUDP: command === 2,
   };
+  } catch (e) {
+    console.error('ProcessProtocolHeader error:', e.message, e.stack);
+    return { hasError: true, message: 'protocol processing error' };
+  }
 }
 
 async function HandleTCPOutBound(
@@ -4008,21 +4078,22 @@ async function performHealthCheck(env, ctx) {
 
 export default {
   async fetch(request, env, ctx) {
-    await ensureTablesExist(env, ctx);  // Ensure tables on every fetch
-    
-    let cfg;
-    
     try {
-      cfg = await Config.fromEnv(env);
-    } catch (err) {
-      console.error(`Configuration Error: ${err.message}`);
-      const headers = new Headers();
-      addSecurityHeaders(headers, null, {});
-      return new Response(`Configuration Error: ${err.message}`, { status: 503, headers });
-    }
+      await ensureTablesExist(env, ctx);  // Ensure tables on every fetch
+      
+      let cfg;
+      
+      try {
+        cfg = await Config.fromEnv(env);
+      } catch (err) {
+        console.error(`Configuration Error: ${err.message}`);
+        const headers = new Headers();
+        addSecurityHeaders(headers, null, {});
+        return new Response('Service temporarily unavailable', { status: 503, headers });
+      }
 
-    const url = new URL(request.url);
-    const clientIp = request.headers.get('CF-Connecting-IP');
+      const url = new URL(request.url);
+      const clientIp = request.headers.get('CF-Connecting-IP');
 
     const adminPrefix = env.ADMIN_PATH_PREFIX || 'admin';
     
@@ -4263,5 +4334,11 @@ export default {
     const headers = new Headers({ 'Content-Type': 'text/html' });
     addSecurityHeaders(headers, null, {});
     return new Response(masqueradeHtml, { headers });
+    } catch (e) {
+      console.error('Fetch handler error:', e.message, e.stack);
+      const headers = new Headers();
+      addSecurityHeaders(headers, null, {});
+      return new Response('Internal Server Error', { status: 500, headers });
+    }
   },
 }
