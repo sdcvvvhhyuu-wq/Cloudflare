@@ -31,16 +31,16 @@ const Config = {
   async fromEnv(env) {
     let selectedProxyIP = null;
 
-    // Health Check & Auto-Switching from D1
-    if (env.D1) {
+    // Health Check & Auto-Switching from DB
+    if (env.DB) {
       try {
-        const { results } = await env.D1.prepare("SELECT ip_port FROM proxy_health WHERE is_healthy = 1 ORDER BY latency_ms ASC LIMIT 1").all();
+        const { results } = await env.DB.prepare("SELECT ip_port FROM proxy_health WHERE is_healthy = 1 ORDER BY latency_ms ASC LIMIT 1").all();
         selectedProxyIP = results[0]?.ip_port || null;
         if (selectedProxyIP) {
-          console.log(`Using best healthy proxy IP from D1: ${selectedProxyIP}`);
+          console.log(`Using best healthy proxy IP from DB: ${selectedProxyIP}`);
         }
       } catch (e) {
-        console.error(`Failed to read proxy health from D1: ${e.message}`);
+        console.error(`Failed to read proxy health from DB: ${e.message}`);
       }
     }
 
@@ -196,6 +196,10 @@ async function formatBytes(bytes) {
 }
 
 async function kvGet(db, key, type = 'text') {
+  if (!db) {
+    console.error(`kvGet: Database not available for key ${key}`);
+    return null;
+  }
   try {
     const stmt = db.prepare("SELECT value, expiration FROM key_value WHERE key = ?").bind(key);
     const res = await stmt.first();
@@ -224,6 +228,10 @@ async function kvGet(db, key, type = 'text') {
 }
 
 async function kvPut(db, key, value, options = {}) {
+  if (!db) {
+    console.error(`kvPut: Database not available for key ${key}`);
+    return;
+  }
   try {
     if (typeof value === 'object') {
       value = JSON.stringify(value);
@@ -242,6 +250,10 @@ async function kvPut(db, key, value, options = {}) {
 }
 
 async function kvDelete(db, key) {
+  if (!db) {
+    console.error(`kvDelete: Database not available for key ${key}`);
+    return;
+  }
   try {
     await db.prepare("DELETE FROM key_value WHERE key = ?").bind(key).run();
   } catch (e) {
@@ -332,14 +344,22 @@ async function updateUsage(env, uuid, bytes, ctx) {
 }
 
 async function cleanupOldIps(env, ctx) {
-  const cleanupPromise = env.DB.prepare(
-    "DELETE FROM user_ips WHERE last_seen < datetime('now', ?)"
-  ).bind(`-${CONST.IP_CLEANUP_AGE_DAYS} days`).run();
-  
-  if (ctx) {
-    ctx.waitUntil(cleanupPromise);
-  } else {
-    await cleanupPromise;
+  if (!env.DB) {
+    console.warn('cleanupOldIps: D1 binding not available, skipping cleanup');
+    return;
+  }
+  try {
+    const cleanupPromise = env.DB.prepare(
+      "DELETE FROM user_ips WHERE last_seen < datetime('now', ?)"
+    ).bind(`-${CONST.IP_CLEANUP_AGE_DAYS} days`).run();
+    
+    if (ctx) {
+      ctx.waitUntil(cleanupPromise);
+    } else {
+      await cleanupPromise;
+    }
+  } catch (e) {
+    console.error(`cleanupOldIps error: ${e.message}`);
   }
 }
 
@@ -1464,6 +1484,13 @@ async function handleAdminRequest(request, env, ctx, adminPrefix) {
   const adminSubPath = url.pathname.substring(adminBasePath.length) || '/';
 
   if (adminSubPath.startsWith('/api/')) {
+    // Check if database is available for API operations (must be before isAdmin check)
+    if (!env.DB) {
+      const headers = new Headers(jsonHeader);
+      addSecurityHeaders(headers, null, {});
+      return new Response(JSON.stringify({ error: 'Database not configured' }), { status: 503, headers });
+    }
+
     if (!(await isAdmin(request, env))) {
       const headers = new Headers(jsonHeader);
       addSecurityHeaders(headers, null, {});
@@ -4035,6 +4062,11 @@ function socks5AddressParser(address) {
 // ============================================================================
 
 async function performHealthCheck(env, ctx) {
+  if (!env.DB) {
+    console.warn('performHealthCheck: D1 binding not available, skipping health check');
+    return;
+  }
+  
   const proxyIps = env.PROXYIPS ? env.PROXYIPS.split(',').map(ip => ip.trim()) : Config.proxyIPs;
   
   const healthStmts = [];
@@ -4067,9 +4099,12 @@ async function performHealthCheck(env, ctx) {
     );
   }
   
-  await env.DB.batch(healthStmts);
-  
-  console.log('Proxy health check completed.');
+  try {
+    await env.DB.batch(healthStmts);
+    console.log('Proxy health check completed.');
+  } catch (e) {
+    console.error(`performHealthCheck batch error: ${e.message}`);
+  }
 }
 
 // ============================================================================
