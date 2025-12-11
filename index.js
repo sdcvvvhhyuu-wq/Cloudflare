@@ -3305,7 +3305,7 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
         <div class="card">
           <div class="section-title">
             <h2>🌐 Network Information</h2>
-            <button class="btn ghost small" onclick="location.reload()">🔄 Refresh</button>
+            <button class="btn ghost small" data-action="refresh">🔄 Refresh</button>
           </div>
           <p class="muted">Connection details and IP information.</p>
           <div class="info-grid">
@@ -3346,9 +3346,9 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
             <div>
               <h3 style="font-size:16px;margin:12px 0 8px;color:var(--accent-2);">Xray / V2Ray Subscription</h3>
               <div class="buttons">
-                <button class="btn primary" onclick="copyToClipboard('${subXrayUrl}', this)">📋 Copy Xray Link</button>
-                <button class="btn ghost" onclick="document.getElementById('xray-config').classList.toggle('hidden')">View Config</button>
-                <button class="btn ghost" onclick="generateQRCode('${subXrayUrl}')">QR Code</button>
+                <button class="btn primary" data-action="copy" data-url="xray">📋 Copy Xray Link</button>
+                <button class="btn ghost" data-action="toggle" data-target="xray-config">View Config</button>
+                <button class="btn ghost" data-action="qr" data-url="xray">QR Code</button>
               </div>
               <pre class="config hidden" id="xray-config">${escapeHTML(singleXrayConfig)}</pre>
             </div>
@@ -3356,9 +3356,9 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
             <div>
               <h3 style="font-size:16px;margin:12px 0 8px;color:var(--accent-2);">Sing-Box / Clash Subscription</h3>
               <div class="buttons">
-                <button class="btn primary" onclick="copyToClipboard('${subSbUrl}', this)">📋 Copy Singbox Link</button>
-                <button class="btn ghost" onclick="document.getElementById('sb-config').classList.toggle('hidden')">View Config</button>
-                <button class="btn ghost" onclick="generateQRCode('${subSbUrl}')">QR Code</button>
+                <button class="btn primary" data-action="copy" data-url="singbox">📋 Copy Singbox Link</button>
+                <button class="btn ghost" data-action="toggle" data-target="sb-config">View Config</button>
+                <button class="btn ghost" data-action="qr" data-url="singbox">QR Code</button>
               </div>
               <pre class="config hidden" id="sb-config">${escapeHTML(singleSingboxConfig)}</pre>
             </div>
@@ -3386,8 +3386,8 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
             <p class="muted">Click any "QR Code" button to generate a scannable code.</p>
           </div>
           <div class="buttons" style="justify-content:center;margin-top:16px;">
-            <button class="btn ghost small" onclick="generateQRCode('${escapeHTML(singleXrayConfig)}')">Xray QR</button>
-            <button class="btn ghost small" onclick="generateQRCode('${escapeHTML(singleSingboxConfig)}')">Singbox QR</button>
+            <button class="btn ghost small" data-action="qr" data-config="xray">Xray QR</button>
+            <button class="btn ghost small" data-action="qr" data-config="singbox">Singbox QR</button>
           </div>
         </div>
 
@@ -3417,8 +3417,8 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
           <h2>💾 Export Configuration</h2>
           <p class="muted mb-2">Download configuration for manual import or backup.</p>
           <div class="buttons">
-            <button class="btn primary small" onclick="downloadConfig('${escapeHTML(singleXrayConfig)}', 'xray-config.txt')">Download Xray</button>
-            <button class="btn primary small" onclick="downloadConfig('${escapeHTML(singleSingboxConfig)}', 'singbox-config.txt')">Download Singbox</button>
+            <button class="btn primary small" data-action="download" data-type="xray">Download Xray</button>
+            <button class="btn primary small" data-action="download" data-type="singbox">Download Singbox</button>
           </div>
         </div>
       </aside>
@@ -4008,6 +4008,63 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
       URL.revokeObjectURL(url);
       showToast('✓ Configuration downloaded: ' + filename, false);
     }
+
+    // ========================================================================
+    // EVENT DELEGATION FOR USER PANEL BUTTONS
+    // ========================================================================
+    document.addEventListener('click', function(e) {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      
+      const action = btn.dataset.action;
+      
+      switch (action) {
+        case 'refresh':
+          location.reload();
+          break;
+          
+        case 'copy': {
+          const urlType = btn.dataset.url;
+          const url = urlType === 'xray' ? window.CONFIG.subXrayUrl : window.CONFIG.subSbUrl;
+          copyToClipboard(url, btn);
+          break;
+        }
+        
+        case 'qr': {
+          const urlType = btn.dataset.url;
+          const configType = btn.dataset.config;
+          let text;
+          if (urlType === 'xray') {
+            text = window.CONFIG.subXrayUrl;
+          } else if (urlType === 'singbox') {
+            text = window.CONFIG.subSbUrl;
+          } else if (configType === 'xray') {
+            text = window.CONFIG.singleXrayConfig;
+          } else if (configType === 'singbox') {
+            text = window.CONFIG.singleSingboxConfig;
+          }
+          if (text) generateQRCode(text);
+          break;
+        }
+        
+        case 'toggle': {
+          const targetId = btn.dataset.target;
+          const target = document.getElementById(targetId);
+          if (target) target.classList.toggle('hidden');
+          break;
+        }
+        
+        case 'download': {
+          const type = btn.dataset.type;
+          if (type === 'xray') {
+            downloadConfig(window.CONFIG.singleXrayConfig, 'xray-config.txt');
+          } else if (type === 'singbox') {
+            downloadConfig(window.CONFIG.singleSingboxConfig, 'singbox-config.txt');
+          }
+          break;
+        }
+      }
+    });
 
     function updateExpirationDisplay() {
       if (!window.CONFIG.expirationDateTime) {
