@@ -19,20 +19,50 @@ npx wrangler dev --port 5000 --ip 0.0.0.0
 Environment variables in `wrangler.toml`:
 - `UUID` - Unique user identifier for authentication
 - `PROXYIP` - Proxy IP address for fronting
+- `ADMIN_KEY` - Admin panel password
 
 ## Access
-Access the panel via: `/{YOUR_UUID}`
-Default UUID: `d342d11e-d424-4583-b36e-524ab1f0afa4`
+- User Panel: `/{YOUR_UUID}`
+- Admin Panel: `/admin/{ADMIN_KEY}`
+- Default UUID: `d342d11e-d424-4583-b36e-524ab1f0afa4`
+- Default Admin Key: `admin123`
 
 ## Recent Changes (December 2025)
-- Fixed Internal Server Error issues caused by missing D1 database binding
-- Standardized database binding to use `env.DB` consistently throughout codebase
-- Added null checks to KV helper functions (kvGet, kvPut, kvDelete)
-- Added null checks to cleanupOldIps and performHealthCheck functions
-- Admin API now checks database availability before authentication (returns 503 if unavailable)
-- All handlers gracefully degrade when D1 binding is not configured
+
+### UI/UX Improvements
+- **User Panel Redesign**: Modern dark theme with glassmorphism effects
+  - Live Traffic widget with animated graph (download/upload speeds)
+  - Connection Health card showing latency, uptime, and stability meter
+  - Network Statistics with colorful icons (latency, jitter, packets in/out)
+  - Analytics section with tab-based interface (Analytics/History)
+  - Account status cards (Status, Data Used, Data Limit, Time Remaining)
+- **Admin Panel Enhancements**: 
+  - Enhanced glassmorphism effects
+  - Proxy Health and Server Status cards with pulsing indicators
+  - Improved table styling with sticky headers
+  - Toast notifications with icons and animations
+
+### Bug Fixes
+- Fixed critical syntax error (duplicate formatBytes function on line 1503)
+- Fixed D1 database binding issues
+- Added automatic test user creation for development environment
+
+### Database
+- D1 database binding configured for local development
+- Tables: users, user_ips, key_value, proxy_health
+- Test user automatically created on startup
+
+## Design Specifications
+- Dark gradient theme: #0b1220 to #071323
+- Card background: #0f1724
+- Accent colors:
+  - Blue: #3b82f6
+  - Green: #22c55e
+  - Orange: #f59e0b
+  - Red: #ef4444
+  - Purple: #a855f7
 
 ## Notes
-- The D1 database binding is optional and not configured locally
-- Some features require Cloudflare production environment
-- When D1 is not available, the worker logs a warning but continues working
+- D1 database is simulated locally via Miniflare
+- Connection configurations remain unchanged
+- All proxy and WebSocket functionality preserved
