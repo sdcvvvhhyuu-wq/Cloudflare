@@ -1035,21 +1035,57 @@ const adminPanelHTML = `<!DOCTYPE html>
   <title>Admin Dashboard - VLESS Proxy Manager</title>
   <style nonce="CSP_NONCE_PLACEHOLDER">
     :root {
-      --bg-main: #111827; --bg-card: #1F2937; --border: #374151;
+      --bg-main: #0a0e17; --bg-card: #1a1f2e; --border: #2a3441;
       --text-primary: #F9FAFB; --text-secondary: #9CA3AF;
       --accent: #3B82F6; --accent-hover: #2563EB;
       --danger: #EF4444; --danger-hover: #DC2626;
       --success: #22C55E; --warning: #F59e0b;
       --btn-secondary-bg: #4B5563; --purple: #a855f7;
+      --cyan: #06b6d4; --pink: #ec4899;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    @keyframes gradient-flow {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    @keyframes float-particles {
+      0%, 100% { transform: translateY(0) rotate(0deg); opacity: 0.3; }
+      50% { transform: translateY(-20px) rotate(180deg); opacity: 0.8; }
+    }
+    @keyframes counter-pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+    @keyframes title-shimmer {
+      0% { background-position: -200% center; }
+      100% { background-position: 200% center; }
+    }
     body {
       font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      background: linear-gradient(180deg, var(--bg-main) 0%, #0f1419 100%);
+      background: linear-gradient(135deg, #0a0e17 0%, #111827 25%, #0d1321 50%, #0a0e17 75%, #111827 100%);
+      background-size: 400% 400%;
+      animation: gradient-flow 15s ease infinite;
       color: var(--text-primary);
       font-size: 14px;
       line-height: 1.6;
       min-height: 100vh;
+      position: relative;
+      overflow-x: hidden;
+    }
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: 
+        radial-gradient(ellipse at 20% 30%, rgba(59, 130, 246, 0.08) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 70%, rgba(168, 85, 247, 0.08) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 100%, rgba(6, 182, 212, 0.05) 0%, transparent 40%);
+      pointer-events: none;
+      z-index: -1;
     }
     .container {
       max-width: 1400px;
@@ -1058,34 +1094,60 @@ const adminPanelHTML = `<!DOCTYPE html>
     }
     h1, h2 { font-weight: 600; }
     h1 {
-      font-size: 28px;
-      margin-bottom: 24px;
-      background: linear-gradient(135deg, #3B82F6 0%, #8B5CF6 100%);
+      font-size: 32px;
+      margin-bottom: 28px;
+      background: linear-gradient(135deg, #3B82F6 0%, #8B5CF6 30%, #06b6d4 60%, #3B82F6 100%);
+      background-size: 200% auto;
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
+      animation: title-shimmer 4s linear infinite;
+      text-shadow: 0 0 40px rgba(59, 130, 246, 0.3);
     }
     h2 {
       font-size: 18px;
-      border-bottom: 2px solid var(--border);
+      border-bottom: 2px solid transparent;
+      border-image: linear-gradient(90deg, var(--accent), var(--purple), transparent) 1;
       padding-bottom: 12px;
       margin-bottom: 20px;
+      position: relative;
     }
     .card {
-      background: rgba(31, 41, 55, 0.8);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      border-radius: 12px;
-      padding: 24px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1), 0 0 40px rgba(59, 130, 246, 0.03);
+      background: linear-gradient(145deg, rgba(26, 31, 46, 0.9) 0%, rgba(17, 24, 39, 0.95) 100%);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 16px;
+      padding: 28px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      box-shadow: 
+        0 4px 24px rgba(0,0,0,0.2),
+        0 0 0 1px rgba(255, 255, 255, 0.03),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
       margin-bottom: 24px;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03), transparent);
+      transition: left 0.6s ease;
+    }
+    .card:hover::before {
+      left: 100%;
     }
     .card:hover {
-      box-shadow: 0 12px 24px rgba(0,0,0,0.25), 0 0 60px rgba(59, 130, 246, 0.08);
+      box-shadow: 
+        0 20px 40px rgba(0,0,0,0.3),
+        0 0 80px rgba(59, 130, 246, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
       border-color: rgba(59, 130, 246, 0.3);
-      transform: translateY(-2px);
+      transform: translateY(-4px);
     }
     .dashboard-stats {
       display: grid;
@@ -1094,16 +1156,17 @@ const adminPanelHTML = `<!DOCTYPE html>
       margin-bottom: 30px;
     }
     .stat-card {
-      background: rgba(31, 41, 55, 0.8);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      padding: 20px;
-      border-radius: 12px;
+      background: linear-gradient(145deg, rgba(26, 31, 46, 0.9) 0%, rgba(17, 24, 39, 0.95) 100%);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      padding: 24px 20px;
+      border-radius: 16px;
       text-align: center;
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
       position: relative;
       overflow: hidden;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
     }
     .stat-card::before {
       content: '';
@@ -1112,15 +1175,26 @@ const adminPanelHTML = `<!DOCTYPE html>
       left: 0;
       right: 0;
       height: 3px;
-      background: linear-gradient(90deg, var(--accent), var(--purple));
+      background: linear-gradient(90deg, var(--accent), var(--purple), var(--cyan));
       opacity: 0;
       transition: opacity 0.3s;
     }
+    .stat-card::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 50% 0%, rgba(59, 130, 246, 0.1) 0%, transparent 70%);
+      opacity: 0;
+      transition: opacity 0.4s;
+    }
     .stat-card:hover::before { opacity: 1; }
+    .stat-card:hover::after { opacity: 1; }
     .stat-card:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 12px 24px rgba(59, 130, 246, 0.15);
-      border-color: rgba(59, 130, 246, 0.2);
+      transform: translateY(-6px) scale(1.02);
+      box-shadow: 
+        0 20px 40px rgba(59, 130, 246, 0.2),
+        0 0 0 1px rgba(59, 130, 246, 0.2);
+      border-color: rgba(59, 130, 246, 0.3);
     }
     .stat-card.healthy { --card-accent: var(--success); }
     .stat-card.warning { --card-accent: var(--warning); }
@@ -1202,39 +1276,61 @@ const adminPanelHTML = `<!DOCTYPE html>
       box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
     }
     .btn {
-      padding: 12px 20px;
+      padding: 12px 22px;
       border: none;
-      border-radius: 8px;
+      border-radius: 10px;
       font-weight: 600;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       display: inline-flex;
       align-items: center;
       justify-content: center;
       gap: 8px;
       font-size: 14px;
+      position: relative;
+      overflow: hidden;
     }
-    .btn:active { transform: scale(0.98); }
+    .btn::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      transition: left 0.5s ease;
+    }
+    .btn:hover::before { left: 100%; }
+    .btn:active { transform: scale(0.96); }
     .btn-primary {
-      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+      background: linear-gradient(135deg, var(--accent) 0%, #6366f1 50%, var(--purple) 100%);
+      background-size: 200% 200%;
       color: white;
+      box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
     }
     .btn-primary:hover {
-      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
-      transform: translateY(-2px);
+      background-position: 100% 50%;
+      box-shadow: 0 8px 25px rgba(59, 130, 246, 0.5);
+      transform: translateY(-3px);
     }
     .btn-secondary {
-      background: var(--btn-secondary-bg);
+      background: linear-gradient(135deg, #4B5563 0%, #374151 100%);
       color: white;
+      border: 1px solid rgba(255,255,255,0.08);
     }
-    .btn-secondary:hover { background: #6B7280; }
+    .btn-secondary:hover { 
+      background: linear-gradient(135deg, #6B7280 0%, #4B5563 100%);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
     .btn-danger {
-      background: var(--danger);
+      background: linear-gradient(135deg, var(--danger) 0%, #dc2626 100%);
       color: white;
+      box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3);
     }
     .btn-danger:hover {
-      background: var(--danger-hover);
-      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+      box-shadow: 0 8px 25px rgba(239, 68, 68, 0.5);
+      transform: translateY(-3px);
     }
     .table-wrapper {
       overflow-x: auto;
@@ -1670,6 +1766,29 @@ const adminPanelHTML = `<!DOCTYPE html>
         const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+      }
+
+      function animateCounter(el, targetValue, duration = 1000, suffix = '') {
+        const startValue = parseInt(el.textContent) || 0;
+        const startTime = performance.now();
+        const diff = targetValue - startValue;
+        
+        function update(currentTime) {
+          const elapsed = currentTime - startTime;
+          const progress = Math.min(elapsed / duration, 1);
+          const easeProgress = 1 - Math.pow(1 - progress, 3);
+          const currentValue = Math.floor(startValue + diff * easeProgress);
+          el.textContent = currentValue + suffix;
+          
+          if (progress < 1) {
+            requestAnimationFrame(update);
+          } else {
+            el.textContent = targetValue + suffix;
+            el.style.animation = 'counter-pulse 0.3s ease';
+            setTimeout(() => el.style.animation = '', 300);
+          }
+        }
+        requestAnimationFrame(update);
       }
 
       function showToast(message, typeOrError = 'success') {
@@ -2682,38 +2801,85 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
     :root{
       --bg:#0b1220; --card:#0f1724; --muted:#9aa4b2; --accent:#3b82f6;
       --accent-2:#60a5fa; --success:#22c55e; --danger:#ef4444; --warning:#f59e0b;
-      --glass: rgba(255,255,255,0.03); --radius:12px; --mono: "SF Mono", "Fira Code", monospace;
+      --glass: rgba(255,255,255,0.03); --radius:16px; --mono: "SF Mono", "Fira Code", monospace;
+      --purple:#a855f7; --glow-accent: rgba(59, 130, 246, 0.4); --glow-purple: rgba(168, 85, 247, 0.3);
     }
     * { box-sizing:border-box; margin: 0; padding: 0; }
+    @keyframes gradient-shift { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+    @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+    @keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+    @keyframes glow-pulse { 0%,100%{box-shadow:0 0 20px var(--glow-accent)} 50%{box-shadow:0 0 40px var(--glow-accent), 0 0 60px var(--glow-purple)} }
     body{
       font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-      background: linear-gradient(180deg,#061021 0%, #071323 100%);
+      background: linear-gradient(135deg, #030712 0%, #0f172a 25%, #1e1b4b 50%, #0f172a 75%, #030712 100%);
+      background-size: 400% 400%;
+      animation: gradient-shift 15s ease infinite;
       color:#e6eef8; -webkit-font-smoothing:antialiased;
       min-height:100vh; padding:28px;
     }
+    body::before{
+      content:''; position:fixed; top:0; left:0; right:0; bottom:0; z-index:-1;
+      background: radial-gradient(ellipse at 20% 20%, rgba(59, 130, 246, 0.08) 0%, transparent 50%),
+                  radial-gradient(ellipse at 80% 80%, rgba(168, 85, 247, 0.08) 0%, transparent 50%),
+                  radial-gradient(ellipse at 50% 50%, rgba(34, 197, 94, 0.03) 0%, transparent 60%);
+    }
     .container{max-width:1100px;margin:0 auto}
-    .card{background:var(--card); border-radius:var(--radius); padding:20px;
-      border:1px solid rgba(255,255,255,0.03); box-shadow:0 8px 30px rgba(2,6,23,0.5); margin-bottom:20px;
-      transition: all 0.3s ease;
+    .card{
+      background: linear-gradient(145deg, rgba(15, 23, 42, 0.9), rgba(15, 23, 36, 0.7));
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border-radius:var(--radius); padding:22px;
+      border:1px solid rgba(255,255,255,0.06); 
+      box-shadow:0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05); 
+      margin-bottom:20px;
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      position:relative; overflow:hidden;
     }
-    .card:hover { box-shadow:0 12px 40px rgba(2,6,23,0.7); transform: translateY(-2px); }
-    h1,h2{margin:0 0 14px;font-weight:600}
-    h1{font-size:28px; background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;}
-    h2{font-size:20px}
-    p.lead{color:var(--muted);margin:6px 0 20px;font-size:15px}
+    .card::before{
+      content:''; position:absolute; top:0; left:0; right:0; height:1px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+    }
+    .card:hover { 
+      box-shadow:0 20px 50px rgba(0,0,0,0.4), 0 0 30px rgba(59, 130, 246, 0.1);
+      transform: translateY(-4px);
+      border-color: rgba(59, 130, 246, 0.2);
+    }
+    h1,h2{margin:0 0 14px;font-weight:700}
+    h1{font-size:30px; 
+      background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #ec4899 100%);
+      background-size: 200% auto;
+      animation: shimmer 3s linear infinite;
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      text-shadow: 0 0 40px rgba(139, 92, 246, 0.3);
+    }
+    h2{font-size:20px; color:#f1f5f9}
+    p.lead{color:var(--muted);margin:6px 0 22px;font-size:15px;letter-spacing:0.2px}
 
-    .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:10px}
-    .stat{padding:14px;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);
-      border-radius:10px;text-align:center;border:1px solid rgba(255,255,255,0.02);
-      transition: all 0.3s ease;
+    .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:14px}
+    .stat{
+      padding:18px 14px;
+      background: linear-gradient(145deg, rgba(30, 41, 59, 0.6), rgba(15, 23, 36, 0.8));
+      backdrop-filter: blur(10px);
+      border-radius:14px;text-align:center;
+      border:1px solid rgba(255,255,255,0.04);
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      position:relative; overflow:hidden;
     }
-    .stat:hover { transform: translateY(-3px); box-shadow: 0 6px 20px rgba(59, 130, 246, 0.2); }
-    .stat .val{font-weight:700;font-size:22px;margin-bottom:4px}
-    .stat .lbl{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:0.5px}
-    .stat.status-active .val{color:var(--success)}
-    .stat.status-expired .val{color:var(--danger)}
-    .stat.status-warning .val{color:var(--warning)}
+    .stat::after{
+      content:''; position:absolute; top:-50%; left:-50%; width:200%; height:200%;
+      background: radial-gradient(circle, rgba(255,255,255,0.05) 0%, transparent 70%);
+      opacity:0; transition: opacity 0.4s;
+    }
+    .stat:hover::after { opacity:1; }
+    .stat:hover { 
+      transform: translateY(-5px) scale(1.02); 
+      box-shadow: 0 12px 30px rgba(59, 130, 246, 0.25), 0 0 20px rgba(59, 130, 246, 0.1);
+      border-color: rgba(59, 130, 246, 0.3);
+    }
+    .stat .val{font-weight:800;font-size:24px;margin-bottom:6px;letter-spacing:-0.5px}
+    .stat .lbl{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:1px;font-weight:500}
+    .stat.status-active .val{color:var(--success); text-shadow: 0 0 20px rgba(34, 197, 94, 0.4)}
+    .stat.status-expired .val{color:var(--danger); text-shadow: 0 0 20px rgba(239, 68, 68, 0.4)}
+    .stat.status-warning .val{color:var(--warning); text-shadow: 0 0 20px rgba(245, 158, 11, 0.4)}
 
     .grid{display:grid;grid-template-columns:1fr 360px;gap:18px}
     @media (max-width:980px){ .grid{grid-template-columns:1fr} }
@@ -2723,32 +2889,69 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
     .info-item .label{font-size:11px;color:var(--muted);display:block;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px}
     .info-item .value{font-weight:600;word-break:break-all;font-size:14px}
 
-    .progress-bar{height:12px;background:#071529;border-radius:6px;overflow:hidden;margin:12px 0}
+    .progress-bar{
+      height:14px;background:linear-gradient(90deg, rgba(7,21,41,0.8), rgba(15,23,42,0.9));
+      border-radius:10px;overflow:hidden;margin:14px 0;
+      box-shadow:inset 0 2px 8px rgba(0,0,0,0.4);
+      border:1px solid rgba(255,255,255,0.03);
+    }
     .progress-fill{
       height:100%;
-      transition:width 0.6s ease;
-      border-radius:6px;
+      transition:width 1s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius:10px;
       width:0%;
+      position:relative;
     }
-    .progress-fill.low{background:linear-gradient(90deg,#22c55e,#16a34a)}
-    .progress-fill.medium{background:linear-gradient(90deg,#f59e0b,#d97706)}
-    .progress-fill.high{background:linear-gradient(90deg,#ef4444,#dc2626)}
+    .progress-fill::after{
+      content:'';position:absolute;top:0;left:0;right:0;bottom:0;
+      background:linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+      animation:shimmer 2s infinite;
+    }
+    .progress-fill.low{background:linear-gradient(90deg,#22c55e 0%,#16a34a 50%,#22c55e 100%);background-size:200% auto}
+    .progress-fill.medium{background:linear-gradient(90deg,#f59e0b 0%,#d97706 50%,#f59e0b 100%);background-size:200% auto}
+    .progress-fill.high{background:linear-gradient(90deg,#ef4444 0%,#dc2626 50%,#ef4444 100%);background-size:200% auto}
 
     pre.config{background:#071529;padding:14px;border-radius:8px;overflow:auto;
       font-family:var(--mono);font-size:13px;color:#cfe8ff;
       border:1px solid rgba(255,255,255,0.02);max-height:200px}
     .buttons{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
 
-    .btn{display:inline-flex;align-items:center;gap:8px;padding:11px 16px;border-radius:8px;
-      border:none;cursor:pointer;font-weight:600;font-size:14px;transition:all 0.2s;
-      text-decoration:none;color:inherit}
-    .btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#fff;box-shadow:0 4px 12px rgba(59,130,246,0.3)}
-    .btn.primary:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(59,130,246,0.4)}
-    .btn.ghost{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);color:var(--muted)}
-    .btn.ghost:hover{background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.12);color:#fff}
-    .btn.small{padding:8px 12px;font-size:13px}
-    .btn:active{transform:translateY(0) scale(0.98)}
-    .btn:disabled{opacity:0.5;cursor:not-allowed}
+    .btn{
+      display:inline-flex;align-items:center;gap:8px;padding:12px 18px;border-radius:10px;
+      border:none;cursor:pointer;font-weight:600;font-size:14px;
+      transition:all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      text-decoration:none;color:inherit;position:relative;overflow:hidden;
+    }
+    .btn::before{
+      content:'';position:absolute;top:0;left:-100%;width:100%;height:100%;
+      background:linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      transition:left 0.5s;
+    }
+    .btn:hover::before{left:100%}
+    .btn.primary{
+      background:linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #6366f1 100%);
+      background-size:200% auto;
+      color:#fff;box-shadow:0 4px 20px rgba(59,130,246,0.4), inset 0 1px 0 rgba(255,255,255,0.2);
+    }
+    .btn.primary:hover{
+      transform:translateY(-3px) scale(1.02);
+      box-shadow:0 8px 30px rgba(59,130,246,0.5), 0 0 20px rgba(139,92,246,0.3);
+      background-position:right center;
+    }
+    .btn.ghost{
+      background:linear-gradient(145deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
+      backdrop-filter:blur(10px);
+      border:1px solid rgba(255,255,255,0.1);color:var(--muted);
+    }
+    .btn.ghost:hover{
+      background:linear-gradient(145deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05));
+      border-color:rgba(59,130,246,0.4);color:#fff;
+      box-shadow:0 4px 15px rgba(59,130,246,0.2);
+      transform:translateY(-2px);
+    }
+    .btn.small{padding:9px 14px;font-size:13px}
+    .btn:active{transform:translateY(0) scale(0.97)}
+    .btn:disabled{opacity:0.5;cursor:not-allowed;transform:none}
 
     .qr-container{background:#fff;padding:16px;border-radius:10px;display:inline-block;box-shadow:0 4px 12px rgba(0,0,0,0.2);margin:16px auto;text-align:center}
     #qr-display{min-height:280px;display:flex;align-items:center;justify-content:center;flex-direction:column}
@@ -2778,8 +2981,23 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
     @media(max-width:980px){.widgets-grid{grid-template-columns:1fr 1fr}}
     @media(max-width:640px){.widgets-grid{grid-template-columns:1fr}}
     
-    .widget{background:var(--card);border-radius:var(--radius);padding:18px;
-      border:1px solid rgba(255,255,255,0.03);position:relative;overflow:hidden}
+    .widget{
+      background: linear-gradient(145deg, rgba(15, 23, 42, 0.9), rgba(15, 23, 36, 0.7));
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border-radius:var(--radius);padding:20px;
+      border:1px solid rgba(255,255,255,0.06);position:relative;overflow:hidden;
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+    }
+    .widget::before{
+      content:''; position:absolute; top:0; left:0; right:0; height:1px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
+    }
+    .widget:hover{
+      border-color: rgba(59, 130, 246, 0.2);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.3), 0 0 20px rgba(59, 130, 246, 0.08);
+      transform: translateY(-3px);
+    }
     .widget-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
     .widget-title{display:flex;align-items:center;gap:10px;font-weight:600;font-size:14px}
     .widget-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px}
@@ -2839,8 +3057,16 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
     .analytics-item-val{font-size:22px;font-weight:700;margin-bottom:4px}
     .analytics-item-lbl{font-size:11px;color:var(--muted);text-transform:uppercase}
 
-    @keyframes pulse-glow{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,0.4)}50%{box-shadow:0 0 0 8px rgba(34,197,94,0)}}
-    .pulse-indicator{width:8px;height:8px;border-radius:50%;background:var(--success);animation:pulse-glow 2s ease-in-out infinite}
+    @keyframes pulse-glow{
+      0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,0.6), 0 0 10px rgba(34,197,94,0.4)}
+      50%{box-shadow:0 0 0 10px rgba(34,197,94,0), 0 0 20px rgba(34,197,94,0.2)}
+    }
+    .pulse-indicator{
+      width:10px;height:10px;border-radius:50%;
+      background:linear-gradient(135deg, #22c55e, #16a34a);
+      animation:pulse-glow 2s ease-in-out infinite;
+      box-shadow:0 0 10px rgba(34,197,94,0.5);
+    }
 
     @media (max-width: 768px) {
       body{padding:16px}
@@ -2947,7 +3173,7 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
           <div class="health-item">
             <div class="health-item-icon" style="background:rgba(59,130,246,0.12);color:var(--accent)">⏰</div>
             <div>
-              <div class="health-item-val" id="uptime-val">—</div>
+              <div class="health-item-val" id="uptime-val">0h 0m</div>
               <div class="health-item-lbl">Uptime</div>
             </div>
           </div>
@@ -3249,6 +3475,9 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
     }
 
     let sessionStart = Date.now();
+    let simulatedUploadBytes = 0;
+    const initialTrafficUsed = window.CONFIG.initialTrafficUsed || 0;
+    
     function updateUptime() {
       const elapsed = Date.now() - sessionStart;
       const hours = Math.floor(elapsed / 3600000);
@@ -3256,8 +3485,19 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
       const uptimeEl = document.getElementById('uptime-val');
       if (uptimeEl) uptimeEl.textContent = hours + 'h ' + minutes + 'm';
     }
+    updateUptime();
     setInterval(updateUptime, 60000);
-    setTimeout(updateUptime, 100);
+
+    async function updateUploadStats() {
+      simulatedUploadBytes = Math.floor(initialTrafficUsed * (0.30 + Math.random() * 0.10));
+      const uploadFormatted = await formatBytes(simulatedUploadBytes);
+      const totalUpEl = document.getElementById('total-up-stat');
+      if (totalUpEl) totalUpEl.innerHTML = uploadFormatted + ' <span style="font-size:9px;opacity:0.6">(Est.)</span>';
+      const analyticsUpload = document.querySelector('#analytics-content .analytics-item:nth-child(2) .analytics-item-val');
+      if (analyticsUpload) analyticsUpload.innerHTML = uploadFormatted + ' <span style="font-size:9px;opacity:0.6">(Est.)</span>';
+    }
+    updateUploadStats();
+    setInterval(updateUploadStats, 30000);
 
     function simulateLiveStats() {
       const dl = document.getElementById('live-download');
@@ -3272,8 +3512,8 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
       const jitter = document.getElementById('net-jitter');
       if (jitter) jitter.textContent = Math.floor(Math.random() * 5 + 1);
     }
+    simulateLiveStats();
     setInterval(simulateLiveStats, 3000);
-    setTimeout(simulateLiveStats, 500);
 
     // ========================================================================
     // SELF-CONTAINED QR CODE GENERATOR (از اسکریپت دوم)
@@ -3528,45 +3768,124 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
         }
       };
       
+      QRCode.RS_BLOCK_TABLE = [
+        [1, 26, 19], [1, 26, 16], [1, 26, 13], [1, 26, 9],
+        [1, 44, 34], [1, 44, 28], [1, 44, 22], [1, 44, 16],
+        [1, 70, 55], [1, 70, 44], [2, 35, 17], [2, 35, 13],
+        [1, 100, 80], [2, 50, 32], [2, 50, 24], [4, 25, 9],
+        [1, 134, 108], [2, 67, 43], [2, 33, 15, 2, 34, 16], [2, 33, 11, 2, 34, 12],
+        [2, 86, 68], [4, 43, 27], [4, 43, 19], [4, 43, 15],
+        [2, 98, 78], [4, 49, 31], [2, 32, 14, 4, 33, 15], [4, 39, 13, 1, 40, 14],
+        [2, 121, 97], [2, 60, 38, 2, 61, 39], [4, 40, 18, 2, 41, 19], [4, 40, 14, 2, 41, 15],
+        [2, 146, 116], [3, 58, 36, 2, 59, 37], [4, 36, 16, 4, 37, 17], [4, 36, 12, 4, 37, 13],
+        [2, 86, 68, 2, 87, 69], [4, 69, 43, 1, 70, 44], [6, 43, 19, 2, 44, 20], [6, 43, 15, 2, 44, 16]
+      ];
+      
+      QRCode.getRSBlocks = function(typeNumber, errorCorrectLevel) {
+        const rsBlock = QRCode.RS_BLOCK_TABLE[(typeNumber - 1) * 4 + errorCorrectLevel];
+        if (!rsBlock) throw new Error("Invalid RS Block for type " + typeNumber + " level " + errorCorrectLevel);
+        const blocks = [];
+        for (let i = 0; i < rsBlock.length; i += 3) {
+          const count = rsBlock[i];
+          const totalCount = rsBlock[i + 1];
+          const dataCount = rsBlock[i + 2];
+          for (let j = 0; j < count; j++) {
+            blocks.push({ totalCount, dataCount });
+          }
+        }
+        return blocks;
+      };
+      
       QRCode.createData = function(typeNumber, errorCorrectLevel, dataList) {
-        const buffer = [];
+        const rsBlocks = QRCode.getRSBlocks(typeNumber, errorCorrectLevel);
+        const buffer = { buffer: [], length: 0 };
+        
+        function put(num, length) {
+          for (let i = 0; i < length; i++) {
+            buffer.buffer.push(((num >>> (length - i - 1)) & 1) === 1);
+            buffer.length++;
+          }
+        }
+        
         for (let i = 0; i < dataList.length; i++) {
           const data = dataList[i];
-          buffer.push(4);
-          buffer.push(data.data.length);
+          put(4, 4);
+          put(data.data.length, 8);
           for (let j = 0; j < data.data.length; j++) {
-            buffer.push(data.data.charCodeAt(j));
+            put(data.data.charCodeAt(j), 8);
           }
         }
-        const rsBlocks = [[1, 26, 19], [1, 44, 34]][errorCorrectLevel] || [1, 26, 19];
-        const dcdata = new Array(rsBlocks[2]);
+        
+        let totalDataCount = 0;
+        for (let i = 0; i < rsBlocks.length; i++) {
+          totalDataCount += rsBlocks[i].dataCount;
+        }
+        totalDataCount *= 8;
+        
+        if (buffer.length + 4 <= totalDataCount) put(0, 4);
+        while (buffer.length % 8 !== 0) put(0, 1);
+        
+        const padBytes = [0xEC, 0x11];
+        let padIndex = 0;
+        while (buffer.length < totalDataCount) {
+          put(padBytes[padIndex % 2], 8);
+          padIndex++;
+        }
+        
+        const data = new Array(Math.ceil(buffer.length / 8));
+        for (let i = 0; i < data.length; i++) {
+          data[i] = 0;
+          for (let j = 0; j < 8; j++) {
+            if (buffer.buffer[i * 8 + j]) data[i] |= (1 << (7 - j));
+          }
+        }
+        
         let offset = 0;
-        for (let i = 0; i < buffer.length; i += 2 + buffer[i + 1]) {
-          for (let j = 0; j < buffer[i + 1]; j++) {
-            dcdata[offset++] = buffer[i + 2 + j];
+        let maxDcCount = 0, maxEcCount = 0;
+        const dcdata = [], ecdata = [];
+        
+        for (let r = 0; r < rsBlocks.length; r++) {
+          const dcCount = rsBlocks[r].dataCount;
+          const ecCount = rsBlocks[r].totalCount - dcCount;
+          maxDcCount = Math.max(maxDcCount, dcCount);
+          maxEcCount = Math.max(maxEcCount, ecCount);
+          
+          dcdata[r] = new Array(dcCount);
+          for (let i = 0; i < dcdata[r].length; i++) {
+            dcdata[r][i] = data[i + offset] || 0;
+          }
+          offset += dcCount;
+          
+          const rsPoly = QRCode.getErrorCorrectPolynomial(ecCount);
+          const rawPoly = new QRPolynomial(dcdata[r], rsPoly.getLength() - 1);
+          const modPoly = rawPoly.mod(rsPoly);
+          ecdata[r] = new Array(rsPoly.getLength() - 1);
+          for (let i = 0; i < ecdata[r].length; i++) {
+            const modIndex = i + modPoly.getLength() - ecdata[r].length;
+            ecdata[r][i] = modIndex >= 0 ? modPoly.get(modIndex) : 0;
           }
         }
-        const rsPoly = QRCode.getErrorCorrectPolynomial(rsBlocks[1] - rsBlocks[2]);
-        const rawPoly = new QRPolynomial(dcdata, rsPoly.getLength() - 1);
-        const modPoly = rawPoly.mod(rsPoly);
-        const ecdata = new Array(rsPoly.getLength() - 1);
-        for (let i = 0; i < ecdata.length; i++) {
-          const modIndex = i + modPoly.getLength() - ecdata.length;
-          ecdata[i] = modIndex >= 0 ? modPoly.get(modIndex) : 0;
+        
+        let totalCodeCount = 0;
+        for (let r = 0; r < rsBlocks.length; r++) {
+          totalCodeCount += rsBlocks[r].totalCount;
         }
-        const data = new Array(rsBlocks[1]);
+        
+        const result = new Array(totalCodeCount);
         let index = 0;
-        for (let i = 0; i < rsBlocks[0]; i++) {
-          for (let j = 0; j < rsBlocks[2]; j++) {
-            data[index++] = dcdata[i + j * rsBlocks[0]];
+        
+        for (let i = 0; i < maxDcCount; i++) {
+          for (let r = 0; r < rsBlocks.length; r++) {
+            if (i < dcdata[r].length) result[index++] = dcdata[r][i];
           }
         }
-        for (let i = 0; i < rsBlocks[0]; i++) {
-          for (let j = 0; j < rsBlocks[1] - rsBlocks[2]; j++) {
-            data[index++] = ecdata[i + j * rsBlocks[0]];
+        for (let i = 0; i < maxEcCount; i++) {
+          for (let r = 0; r < rsBlocks.length; r++) {
+            if (i < ecdata[r].length) result[index++] = ecdata[r][i];
           }
         }
-        return data;
+        
+        return result;
       };
       
       QRCode.getErrorCorrectPolynomial = function(errorCorrectLength) {
