@@ -2170,7 +2170,6 @@ async function handleAdminRequest(request, env, ctx, adminPrefix) {
           }
 
           let query = "UPDATE users SET expiration_date = ?, expiration_time = ?, notes = ?, traffic_limit = ?, ip_limit = ?";
-          let binds = [expDate, expTime,          let query = "UPDATE users SET expiration_date = ?, expiration_time = ?, notes = ?, traffic_limit = ?, ip_limit = ?";
           let binds = [expDate, expTime, notes || null, traffic_limit, ip_limit || -1];
           
           if (reset_traffic) {
