@@ -30,10 +30,16 @@ Environment variables in `wrangler.toml`:
 ## Recent Changes (December 2025)
 
 ### Latest Fixes (December 11, 2025)
+- **Wrangler v4 Upgrade**: Updated from v3.114.15 to v4.54.0 with compatibility date 2024-12-01
 - **QR Code Generator Enhancement**:
+  - 3-tier fallback system: CDN library → Local fallback → Google Charts API
+  - Updated CSP headers to allow cdnjs.cloudflare.com, unpkg.com, and chart.googleapis.com
   - Increased QR code capacity (typeNumber 10 instead of 5) for longer VLESS URLs
   - Added automatic fallback mechanism with progressive version increase
   - Better error handling for complex configurations
+- **Admin Panel Enhancements**:
+  - Added CSV Export button for exporting user data with proper escaping
+  - Added real-time Server Time display card with 1-second updates
 - **Geo-Location Detection Improvements**:
   - Added 3-second timeout for all geo API calls
   - Added more fallback providers (ipinfo.io, freeipapi.com)
