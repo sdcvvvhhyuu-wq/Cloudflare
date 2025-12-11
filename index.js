@@ -1960,9 +1960,17 @@ const adminPanelHTML = `<!DOCTYPE html>
           document.getElementById('total-users').textContent = stats.total_users;
           document.getElementById('active-users').textContent = stats.active_users;
           document.getElementById('expired-users').textContent = stats.expired_users;
-          document.getElementById('total-traffic').textContent = await formatBytes(stats.total_traffic);
+          document.getElementById('total-traffic').textContent = formatBytes(stats.total_traffic);
+          
+          // Update proxy health status
+          if (stats.proxy_health) {
+            updateProxyHealth(stats.proxy_health.is_healthy, stats.proxy_health.latency_ms);
+          } else {
+            updateProxyHealth(true, null);
+          }
         } catch (error) {
           showToast(error.message, true);
+          updateProxyHealth(false, null);
         }
       }
 
@@ -2390,11 +2398,32 @@ async function handleAdminRequest(request, env, ctx, adminPrefix) {
           const totalTrafficQuery = await env.DB.prepare("SELECT SUM(traffic_used) as sum FROM users").first();
           const totalTraffic = totalTrafficQuery?.sum || 0;
           
+          // Get proxy health status
+          let proxyHealth = { is_healthy: false, latency_ms: null };
+          try {
+            const healthResult = await env.DB.prepare(
+              "SELECT is_healthy, latency_ms FROM proxy_health WHERE is_healthy = 1 ORDER BY latency_ms ASC LIMIT 1"
+            ).first();
+            if (healthResult) {
+              proxyHealth = { is_healthy: true, latency_ms: healthResult.latency_ms };
+            } else {
+              const anyHealth = await env.DB.prepare(
+                "SELECT is_healthy, latency_ms FROM proxy_health LIMIT 1"
+              ).first();
+              if (anyHealth) {
+                proxyHealth = { is_healthy: !!anyHealth.is_healthy, latency_ms: anyHealth.latency_ms };
+              }
+            }
+          } catch (healthErr) {
+            console.error('Failed to get proxy health:', healthErr);
+          }
+          
           return new Response(JSON.stringify({ 
             total_users: totalUsers, 
             active_users: activeUsers, 
             expired_users: expiredUsers, 
-            total_traffic: totalTraffic 
+            total_traffic: totalTraffic,
+            proxy_health: proxyHealth
           }), { status: 200, headers });
         } catch (e) {
           return new Response(JSON.stringify({ error: e.message }), { status: 500, headers });
