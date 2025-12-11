@@ -141,17 +141,22 @@ function generateNonce() {
 }
 
 function addSecurityHeaders(headers, nonce, cspDomains = {}) {
+  const scriptSrc = nonce 
+    ? `script-src 'self' 'nonce-${nonce}' 'unsafe-inline' https://cdnjs.cloudflare.com https://unpkg.com` 
+    : "script-src 'self' https://cdnjs.cloudflare.com https://unpkg.com 'unsafe-inline'";
+  
   const csp = [
     "default-src 'self'",
     "form-action 'self'",
     "object-src 'none'",
     "frame-ancestors 'none'",
     "base-uri 'self'",
-    nonce ? `script-src 'nonce-${nonce}' 'unsafe-inline' https://cdnjs.cloudflare.com https://unpkg.com` : 
-            "script-src 'self' https://cdnjs.cloudflare.com https://unpkg.com 'unsafe-inline'",
+    scriptSrc,
     "style-src 'self' 'unsafe-inline' 'unsafe-hashes'",
-    `img-src 'self' data: https: blob: ${cspDomains.img || ''}`.trim(),
-    `connect-src 'self' https: ${cspDomains.connect || ''}`.trim(),
+    `img-src 'self' data: blob: https: ${cspDomains.img || ''}`.trim(),
+    `connect-src 'self' https: wss: ${cspDomains.connect || ''}`.trim(),
+    "worker-src 'self' blob:",
+    "child-src 'self' blob:",
   ];
 
   headers.set('Content-Security-Policy', csp.join('; '));
@@ -162,8 +167,8 @@ function addSecurityHeaders(headers, nonce, cspDomains = {}) {
   headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
   headers.set('alt-svc', 'h3=":443"; ma=0');
   headers.set('Cross-Origin-Opener-Policy', 'same-origin');
-  headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
-  headers.set('Cross-Origin-Resource-Policy', 'same-origin');
+  headers.set('Cross-Origin-Embedder-Policy', 'unsafe-none');
+  headers.set('Cross-Origin-Resource-Policy', 'cross-origin');
 }
 
 function timingSafeEqual(a, b) {
@@ -4098,38 +4103,46 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
         container.innerHTML = '';
         
         try {
-          if (typeof QRCode !== 'undefined') {
-            new QRCode(container, {
-              text: text,
-              width: 256,
-              height: 256,
-              colorDark : "#000000",
-              colorLight : "#ffffff",
-              correctLevel : QRCode.CorrectLevel.M
-            });
-            showToast('✓ QR Generated (High Quality)', false);
-          } else {
+          const canvas = QRCodeGenerator.generate(text, 256);
+          container.appendChild(canvas);
+          showToast('✓ QR Generated (Embedded)', false);
+        } catch (embeddedErr) {
+          console.warn('Embedded QR failed, trying CDN fallback:', embeddedErr.message);
+          try {
+            if (typeof QRCode !== 'undefined') {
+              new QRCode(container, {
+                text: text,
+                width: 256,
+                height: 256,
+                colorDark: "#000000",
+                colorLight: "#ffffff",
+                correctLevel: QRCode.CorrectLevel.M
+              });
+              showToast('✓ QR Generated (CDN)', false);
+            } else {
+              throw new Error('CDN QRCode library not available');
+            }
+          } catch (cdnErr) {
+            console.warn('CDN QR failed, trying Google Charts:', cdnErr.message);
             try {
-              const canvas = QRCodeGenerator.generate(text, 256);
-              container.appendChild(canvas);
-              showToast('✓ QR Generated (Local)', false);
-            } catch (localErr) {
               const img = document.createElement('img');
               img.src = 'https://chart.googleapis.com/chart?cht=qr&chl=' + encodeURIComponent(text) + '&chs=250x250&choe=UTF-8&chld=M|0';
               img.style.maxWidth = '100%';
               img.alt = 'QR Code';
               img.onerror = function() {
-                container.innerHTML = '<p style="color:var(--danger)">QR Generation Failed. Copy link manually.</p>';
-                showToast('Error generating QR', true);
+                container.innerHTML = '<p style="color:var(--danger)">All QR methods failed. Please copy the link manually.</p>';
+                showToast('QR generation failed - copy link instead', true);
+              };
+              img.onload = function() {
+                showToast('✓ QR Generated (Cloud)', false);
               };
               container.appendChild(img);
-              showToast('✓ QR Generated (Cloud Fallback)', false);
+            } catch (googleErr) {
+              console.error('All QR generation methods failed:', googleErr);
+              container.innerHTML = '<p style="color:var(--danger)">QR Generation Failed. Please copy the link manually.</p>';
+              showToast('QR generation failed - copy link instead', true);
             }
           }
-        } catch (e) {
-          console.error('QR Gen Error:', e);
-          container.innerHTML = '<p style="color:var(--danger)">QR Generation Failed. Copy link manually.</p>';
-          showToast('Error generating QR', true);
         }
       }, 50);
     }

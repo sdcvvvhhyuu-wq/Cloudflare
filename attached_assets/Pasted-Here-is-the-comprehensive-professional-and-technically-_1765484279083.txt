@@ -1,0 +1,32 @@
+Here is the comprehensive, professional, and technically precise prompt written in English. You can copy and paste this directly to an AI (like ChatGPT, Claude, or Gemini) to get the fixed code.
+The Prompt to Copy:
+Role:
+Act as a Senior Cloudflare Worker Architect and Full-Stack Security Engineer. You are an expert in JavaScript, WebSockets, VLESS protocols, and Content Security Policies (CSP).
+Objective:
+Refactor and fix the provided "ULTIMATE VLESS PROXY WORKER" script. The primary goal is to completely fix the QR Code generation functionality to be robust, error-free, and self-contained, while strictly adhering to security standards.
+Critical Requirements & Fixes:
+ * Robust QR Code Generation (Primary & Fallback Strategy):
+   * Primary Method (Embedded): You must embed a lightweight, pure JavaScript QR Code generation library (minified) directly inside the userPanelHTML script section. The User Panel must be able to generate QR codes offline/locally without fetching external resources initially.
+   * Secondary Method (CDN Fallback): Keep the qrcode.min.js script tag (from cdnjs) in the HTML <head> as a backup.
+   * Logic: The script must prioritize the embedded generator. If it fails, it should seamlessly switch to the CDN library.
+ * Content Security Policy (CSP) Perfection:
+   * No CSP Errors: You must update the addSecurityHeaders function. It is currently blocking external scripts and images.
+   * Allow List: You must explicitly allow:
+     * script-src: Allow 'self', 'unsafe-inline', and specifically https://cdnjs.cloudflare.com (for the fallback library).
+     * img-src: Allow 'self', data:, blob:, and https: (for generic fallbacks).
+     * connect-src: Allow 'self' and the worker's own origin.
+   * Nonce Handling: Ensure the nonce logic works correctly. Replace CSP_NONCE_PLACEHOLDER dynamically in the HTML generation phase so inline scripts execute safely.
+ * Remove All Placeholders:
+   * The code MUST NOT contain non-functional placeholders like ADMIN_PATH_PLACEHOLDER or ADMIN_API_BASE_PATH_PLACEHOLDER.
+   * Rewrite the Admin Panel logic to dynamically determine the path based on the env.ADMIN_PATH_PREFIX and env.ADMIN_KEY variables defined in the configuration. The code must be production-ready and runnable immediately.
+ * Code Quality & logic:
+   * Smart Error Handling: If QR generation fails, show a user-friendly error toast, do not crash the UI.
+   * Optimization: Ensure the code is minified where appropriate but readable in logic sections.
+   * Validation: Ensure the UUID and Configuration generated in the QR code are accurate and match the VLESS link format exactly.
+Output:
+Provide the single, complete, unified worker.js file. Do not split it. The code must be the "Ultimate," "Pro," and "Bug-Free" version of the script provided.
+Why this prompt works:
+ * Defines the Role: It forces the AI to think like a security engineer, ensuring the CSP headers are fixed correctly (which is the main reason QR codes fail in these workers).
+ * Specific Fallback Logic: It explicitly tells the AI to use an Embedded engine first (so it works fast and locally) and only use the CDN if necessary, satisfying your requirement for a CDN fallback without relying on it 100%.
+ * CSP Allow-Listing: It specifically names cdnjs.cloudflare.com and data: schemes, which are required for the fallback library and the generated QR image to display without browser errors.
+ * Dynamic Placeholders: It ensures the resulting code doesn't have broken text strings that need manual editing later.
