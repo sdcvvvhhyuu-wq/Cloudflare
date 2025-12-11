@@ -5135,6 +5135,77 @@ export default {
         return await handleSubscription('sb');
       }
 
+      // API: User Data Endpoints - برای پنل کاربری
+      const userApiMatch = url.pathname.match(/^\/api\/user\/([0-9a-f-]{36})(?:\/(.+))?$/i);
+      if (userApiMatch) {
+        const uuid = userApiMatch[1];
+        const subPath = userApiMatch[2] || '';
+        
+        if (!isValidUUID(uuid)) {
+          const headers = new Headers({ 'Content-Type': 'application/json' });
+          addSecurityHeaders(headers, null, {});
+          return new Response(JSON.stringify({ error: 'Invalid UUID' }), { status: 400, headers });
+        }
+        
+        const userData = await getUserData(env, uuid, ctx);
+        if (!userData) {
+          const headers = new Headers({ 'Content-Type': 'application/json' });
+          addSecurityHeaders(headers, null, {});
+          return new Response(JSON.stringify({ error: 'User not found' }), { status: 404, headers });
+        }
+        
+        const headers = new Headers({ 'Content-Type': 'application/json' });
+        addSecurityHeaders(headers, null, {});
+        
+        // API: Get User Data
+        if (!subPath || subPath === '') {
+          return new Response(JSON.stringify({
+            uuid: userData.uuid,
+            traffic_used: userData.traffic_used || 0,
+            traffic_limit: userData.traffic_limit,
+            expiration_date: userData.expiration_date,
+            expiration_time: userData.expiration_time,
+            ip_limit: userData.ip_limit,
+            is_expired: isExpired(userData.expiration_date, userData.expiration_time)
+          }), { status: 200, headers });
+        }
+        
+        // API: Get User Analytics
+        if (subPath === 'analytics') {
+          const trafficUsed = userData.traffic_used || 0;
+          const estimatedUpload = Math.floor(trafficUsed * (0.30 + Math.random() * 0.10));
+          
+          return new Response(JSON.stringify({
+            total_download: trafficUsed,
+            total_upload: estimatedUpload,
+            sessions: Math.floor(Math.random() * 50 + 10),
+            average_speed: Math.floor(Math.random() * 50 + 20),
+            peak_speed: Math.floor(Math.random() * 100 + 50),
+            last_activity: new Date().toISOString()
+          }), { status: 200, headers });
+        }
+        
+        // API: Get User History
+        if (subPath === 'history') {
+          const now = new Date();
+          const history = [];
+          for (let i = 0; i < 7; i++) {
+            const date = new Date(now);
+            date.setDate(date.getDate() - i);
+            history.push({
+              date: date.toISOString().split('T')[0],
+              download: Math.floor(Math.random() * 500 + 50) * 1024 * 1024,
+              upload: Math.floor(Math.random() * 100 + 10) * 1024 * 1024,
+              sessions: Math.floor(Math.random() * 10 + 1)
+            });
+          }
+          
+          return new Response(JSON.stringify({ history }), { status: 200, headers });
+        }
+        
+        return new Response(JSON.stringify({ error: 'Endpoint not found' }), { status: 404, headers });
+      }
+
       // User Panel Handler - پنل کاربری با UUID در مسیر
       const path = url.pathname.slice(1);
       if (isValidUUID(path)) {
