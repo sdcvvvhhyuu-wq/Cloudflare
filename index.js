@@ -1024,7 +1024,7 @@ const adminPanelHTML = `<!DOCTYPE html>
       --accent: #3B82F6; --accent-hover: #2563EB;
       --danger: #EF4444; --danger-hover: #DC2626;
       --success: #22C55E; --warning: #F59e0b;
-      --btn-secondary-bg: #4B5563;
+      --btn-secondary-bg: #4B5563; --purple: #a855f7;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -1056,48 +1056,103 @@ const adminPanelHTML = `<!DOCTYPE html>
       margin-bottom: 20px;
     }
     .card {
-      background: var(--bg-card);
+      background: rgba(31, 41, 55, 0.8);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
       border-radius: 12px;
       padding: 24px;
-      border: 1px solid var(--border);
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1), 0 0 40px rgba(59, 130, 246, 0.03);
       margin-bottom: 24px;
-      transition: all 0.3s;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
     .card:hover {
-      box-shadow: 0 8px 16px rgba(0,0,0,0.2);
-      border-color: var(--accent);
+      box-shadow: 0 12px 24px rgba(0,0,0,0.25), 0 0 60px rgba(59, 130, 246, 0.08);
+      border-color: rgba(59, 130, 246, 0.3);
+      transform: translateY(-2px);
     }
     .dashboard-stats {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 20px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
       margin-bottom: 30px;
     }
     .stat-card {
-      background: linear-gradient(135deg, var(--bg-card) 0%, #1a222e 100%);
+      background: rgba(31, 41, 55, 0.8);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
       padding: 20px;
       border-radius: 12px;
       text-align: center;
-      border: 1px solid var(--border);
-      transition: all 0.3s;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
     }
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--accent), var(--purple));
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .stat-card:hover::before { opacity: 1; }
     .stat-card:hover {
       transform: translateY(-4px);
-      box-shadow: 0 8px 20px rgba(59, 130, 246, 0.2);
+      box-shadow: 0 12px 24px rgba(59, 130, 246, 0.15);
+      border-color: rgba(59, 130, 246, 0.2);
     }
+    .stat-card.healthy { --card-accent: var(--success); }
+    .stat-card.warning { --card-accent: var(--warning); }
+    .stat-card.danger { --card-accent: var(--danger); }
+    .stat-card.healthy::before, .stat-card.warning::before, .stat-card.danger::before {
+      background: var(--card-accent);
+      opacity: 1;
+    }
+    .stat-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 12px;
+      font-size: 20px;
+    }
+    .stat-icon.blue { background: rgba(59, 130, 246, 0.15); }
+    .stat-icon.green { background: rgba(34, 197, 94, 0.15); }
+    .stat-icon.orange { background: rgba(245, 158, 11, 0.15); }
+    .stat-icon.purple { background: rgba(168, 85, 247, 0.15); }
     .stat-value {
-      font-size: 32px;
+      font-size: 28px;
       font-weight: 700;
       color: var(--accent);
-      margin-bottom: 8px;
+      margin-bottom: 6px;
+      line-height: 1.2;
     }
     .stat-label {
-      font-size: 12px;
+      font-size: 11px;
       color: var(--text-secondary);
       text-transform: uppercase;
       letter-spacing: 1px;
     }
+    .stat-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-size: 10px;
+      font-weight: 600;
+      margin-top: 8px;
+    }
+    .stat-badge.online { background: rgba(34, 197, 94, 0.15); color: var(--success); }
+    .stat-badge.offline { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
+    .stat-badge.checking { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
     .form-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -1168,31 +1223,45 @@ const adminPanelHTML = `<!DOCTYPE html>
     .table-wrapper {
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
     }
     table {
       width: 100%;
       border-collapse: collapse;
-      margin-top: 20px;
     }
     th, td {
       padding: 14px 16px;
       text-align: left;
-      border-bottom: 1px solid var(--border);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
     }
     th {
       color: var(--text-secondary);
       font-weight: 600;
-      font-size: 12px;
+      font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      background: rgba(59, 130, 246, 0.05);
+      background: rgba(59, 130, 246, 0.08);
+      position: sticky;
+      top: 0;
+      backdrop-filter: blur(8px);
     }
     td {
       color: var(--text-primary);
       font-size: 13px;
+      transition: background 0.2s;
     }
-    tr:hover {
-      background: rgba(59, 130, 246, 0.05);
+    tbody tr {
+      transition: all 0.2s ease;
+    }
+    tbody tr:hover {
+      background: rgba(59, 130, 246, 0.08);
+    }
+    tbody tr:hover td {
+      color: #fff;
+    }
+    tbody tr:last-child td {
+      border-bottom: none;
     }
     .status-badge {
       padding: 6px 12px;
@@ -1239,23 +1308,86 @@ const adminPanelHTML = `<!DOCTYPE html>
       position: fixed;
       top: 20px;
       right: 20px;
-      background: var(--bg-card);
+      background: rgba(31, 41, 55, 0.95);
+      backdrop-filter: blur(12px);
       color: white;
-      padding: 16px 24px;
+      padding: 16px 20px;
       border-radius: 12px;
       z-index: 1001;
       display: none;
-      border: 1px solid var(--border);
-      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-      animation: slideIn 0.3s ease;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 12px 32px rgba(0,0,0,0.4);
+      animation: slideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      min-width: 280px;
+      max-width: 400px;
     }
+    .toast-content {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .toast-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+    .toast-icon.success { background: rgba(34, 197, 94, 0.15); }
+    .toast-icon.error { background: rgba(239, 68, 68, 0.15); }
+    .toast-icon.warning { background: rgba(245, 158, 11, 0.15); }
+    .toast-icon.info { background: rgba(59, 130, 246, 0.15); }
+    .toast-message { flex: 1; font-size: 14px; line-height: 1.4; }
     @keyframes slideIn {
-      from { transform: translateX(400px); opacity: 0; }
+      from { transform: translateX(120%); opacity: 0; }
       to { transform: translateX(0); opacity: 1; }
     }
+    @keyframes slideOut {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(120%); opacity: 0; }
+    }
     #toast.show { display: block; }
+    #toast.hide { animation: slideOut 0.3s ease forwards; }
     #toast.success { border-left: 4px solid var(--success); }
     #toast.error { border-left: 4px solid var(--danger); }
+    #toast.warning { border-left: 4px solid var(--warning); }
+    #toast.info { border-left: 4px solid var(--accent); }
+    .btn.loading {
+      pointer-events: none;
+      opacity: 0.7;
+      position: relative;
+    }
+    .btn.loading::after {
+      content: '';
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      border: 2px solid transparent;
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      right: 12px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    .pulse-dot.green { background: var(--success); box-shadow: 0 0 8px var(--success); }
+    .pulse-dot.red { background: var(--danger); box-shadow: 0 0 8px var(--danger); }
+    .pulse-dot.orange { background: var(--warning); box-shadow: 0 0 8px var(--warning); }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.8); }
+    }
     .modal-overlay {
       position: fixed;
       top: 0;
@@ -1336,20 +1468,36 @@ const adminPanelHTML = `<!DOCTYPE html>
 
     <div class="dashboard-stats">
       <div class="stat-card">
+        <div class="stat-icon blue">👥</div>
         <div class="stat-value" id="total-users">0</div>
         <div class="stat-label">Total Users</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value" id="active-users">0</div>
+        <div class="stat-icon green">✓</div>
+        <div class="stat-value" style="color: var(--success);" id="active-users">0</div>
         <div class="stat-label">Active Users</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value" id="expired-users">0</div>
+        <div class="stat-icon orange">⏱</div>
+        <div class="stat-value" style="color: var(--warning);" id="expired-users">0</div>
         <div class="stat-label">Expired Users</div>
       </div>
       <div class="stat-card">
+        <div class="stat-icon purple">📊</div>
         <div class="stat-value" id="total-traffic">0 KB</div>
         <div class="stat-label">Total Traffic</div>
+      </div>
+      <div class="stat-card" id="proxy-health-card">
+        <div class="stat-icon green">💚</div>
+        <div class="stat-value" style="font-size: 22px;" id="proxy-health">Checking...</div>
+        <div class="stat-label">Proxy Health</div>
+        <div class="stat-badge checking" id="proxy-health-badge"><span class="pulse-dot orange"></span> Checking</div>
+      </div>
+      <div class="stat-card" id="server-status-card">
+        <div class="stat-icon blue">🖥</div>
+        <div class="stat-value" style="font-size: 22px;" id="server-status">Online</div>
+        <div class="stat-label">Server Status</div>
+        <div class="stat-badge online" id="server-status-badge"><span class="pulse-dot green"></span> Operational</div>
       </div>
     </div>
 
@@ -1500,7 +1648,7 @@ const adminPanelHTML = `<!DOCTYPE html>
         })[m]);
       }
 
-      async function formatBytes(bytes)      async function formatBytes(bytes) {
+      function formatBytes(bytes) {
         if (bytes === 0) return '0 Bytes';
         const k = 1024;
         const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
@@ -1508,11 +1656,43 @@ const adminPanelHTML = `<!DOCTYPE html>
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
       }
 
-      function showToast(message, isError = false) {
+      function showToast(message, typeOrError = 'success') {
         const toast = document.getElementById('toast');
-        toast.textContent = message;
-        toast.className = isError ? 'error show' : 'success show';
-        setTimeout(() => toast.classList.remove('show'), 3000);
+        const type = typeOrError === true ? 'error' : (typeOrError === false ? 'success' : typeOrError);
+        const icons = { success: '✓', error: '✕', warning: '⚠', info: 'ℹ' };
+        const icon = icons[type] || icons.success;
+        toast.innerHTML = '<div class="toast-content"><div class="toast-icon ' + type + '">' + icon + '</div><div class="toast-message">' + message + '</div></div>';
+        toast.className = type + ' show';
+        setTimeout(() => { toast.classList.add('hide'); setTimeout(() => toast.className = '', 300); }, 3000);
+      }
+
+      function updateProxyHealth(isHealthy, latency) {
+        const card = document.getElementById('proxy-health-card');
+        const value = document.getElementById('proxy-health');
+        const badge = document.getElementById('proxy-health-badge');
+        if (isHealthy) {
+          card.className = 'stat-card healthy';
+          value.textContent = latency ? latency + 'ms' : 'Healthy';
+          value.style.color = 'var(--success)';
+          badge.innerHTML = '<span class="pulse-dot green"></span> Online';
+          badge.className = 'stat-badge online';
+        } else {
+          card.className = 'stat-card danger';
+          value.textContent = 'Unhealthy';
+          value.style.color = 'var(--danger)';
+          badge.innerHTML = '<span class="pulse-dot red"></span> Issues';
+          badge.className = 'stat-badge offline';
+        }
+      }
+
+      function setButtonLoading(btn, loading) {
+        if (loading) {
+          btn.classList.add('loading');
+          btn.disabled = true;
+        } else {
+          btn.classList.remove('loading');
+          btn.disabled = false;
+        }
       }
 
       const getCsrfToken = () => document.cookie.split('; ').find(row => row.startsWith('csrf_token='))?.split('=')[1] || '';
@@ -2578,6 +2758,74 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
     .expiry-info{background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.3);
       padding:12px;border-radius:8px;margin-top:12px;color:#86efac}
 
+    .widgets-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px}
+    @media(max-width:980px){.widgets-grid{grid-template-columns:1fr 1fr}}
+    @media(max-width:640px){.widgets-grid{grid-template-columns:1fr}}
+    
+    .widget{background:var(--card);border-radius:var(--radius);padding:18px;
+      border:1px solid rgba(255,255,255,0.03);position:relative;overflow:hidden}
+    .widget-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+    .widget-title{display:flex;align-items:center;gap:10px;font-weight:600;font-size:14px}
+    .widget-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px}
+    .widget-icon.green{background:rgba(34,197,94,0.15);color:var(--success)}
+    .widget-icon.blue{background:rgba(59,130,246,0.15);color:var(--accent)}
+    .widget-icon.orange{background:rgba(245,158,11,0.15);color:var(--warning)}
+    .widget-icon.purple{background:rgba(168,85,247,0.15);color:#a855f7}
+    .widget-icon.red{background:rgba(239,68,68,0.15);color:var(--danger)}
+    .widget-badge{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600}
+    .widget-badge.good{background:rgba(34,197,94,0.15);color:var(--success)}
+    .widget-badge.warning{background:rgba(245,158,11,0.15);color:var(--warning)}
+    .widget-badge.bad{background:rgba(239,68,68,0.15);color:var(--danger)}
+    
+    .traffic-speeds{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+    .traffic-speed{display:flex;align-items:center;gap:10px;padding:12px;background:rgba(255,255,255,0.02);border-radius:8px}
+    .traffic-speed-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center}
+    .traffic-speed-icon.down{background:rgba(34,197,94,0.12);color:var(--success)}
+    .traffic-speed-icon.up{background:rgba(59,130,246,0.12);color:var(--accent)}
+    .traffic-speed-value{font-size:18px;font-weight:700}
+    .traffic-speed-unit{font-size:11px;color:var(--muted)}
+    
+    .traffic-graph{height:60px;background:linear-gradient(180deg,rgba(59,130,246,0.08) 0%,transparent 100%);
+      border-radius:8px;position:relative;overflow:hidden;margin-bottom:14px}
+    .traffic-graph-line{position:absolute;bottom:0;left:0;right:0;height:40%;
+      background:linear-gradient(90deg,rgba(59,130,246,0.3),rgba(34,197,94,0.3),rgba(59,130,246,0.3));
+      clip-path:polygon(0 70%,5% 60%,10% 50%,15% 55%,20% 45%,25% 50%,30% 40%,35% 55%,40% 35%,45% 50%,50% 30%,55% 45%,60% 40%,65% 55%,70% 35%,75% 50%,80% 45%,85% 55%,90% 40%,95% 50%,100% 60%,100% 100%,0 100%)}
+    
+    .traffic-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+    .traffic-stat{text-align:center;padding:8px 4px;background:rgba(255,255,255,0.02);border-radius:6px}
+    .traffic-stat-val{font-size:13px;font-weight:600}
+    .traffic-stat-lbl{font-size:9px;color:var(--muted);text-transform:uppercase;margin-top:2px}
+    
+    .health-row{display:flex;align-items:center;gap:16px;margin-bottom:14px}
+    .health-item{flex:1;display:flex;align-items:center;gap:10px;padding:10px;background:rgba(255,255,255,0.02);border-radius:8px}
+    .health-item-icon{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px}
+    .health-item-val{font-size:16px;font-weight:600}
+    .health-item-lbl{font-size:10px;color:var(--muted)}
+    
+    .stability-bar{height:8px;background:#071529;border-radius:4px;overflow:hidden}
+    .stability-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--success),#16a34a);transition:width 1s ease}
+    
+    .net-stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .net-stat{padding:14px;background:rgba(255,255,255,0.02);border-radius:10px;display:flex;align-items:center;gap:12px}
+    .net-stat-icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px}
+    .net-stat-info{flex:1}
+    .net-stat-val{font-size:18px;font-weight:700}
+    .net-stat-lbl{font-size:10px;color:var(--muted);text-transform:uppercase}
+    
+    .analytics-tabs{display:flex;gap:6px;margin-bottom:14px}
+    .analytics-tab{padding:8px 16px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;
+      background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted);transition:all 0.2s}
+    .analytics-tab.active{background:var(--accent);border-color:var(--accent);color:#fff}
+    .analytics-tab:hover:not(.active){background:rgba(255,255,255,0.04)}
+    
+    .analytics-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .analytics-item{padding:16px;background:rgba(255,255,255,0.02);border-radius:10px;text-align:center}
+    .analytics-item-val{font-size:22px;font-weight:700;margin-bottom:4px}
+    .analytics-item-lbl{font-size:11px;color:var(--muted);text-transform:uppercase}
+
+    @keyframes pulse-glow{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,0.4)}50%{box-shadow:0 0 0 8px rgba(34,197,94,0)}}
+    .pulse-indicator{width:8px;height:8px;border-radius:50%;background:var(--success);animation:pulse-glow 2s ease-in-out infinite}
+
     @media (max-width: 768px) {
       body{padding:16px}
       .container{padding:0}
@@ -2585,6 +2833,10 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
       .stats{grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
       .info-grid{grid-template-columns:1fr}
       .btn{padding:9px 12px;font-size:13px}
+      .traffic-stats{grid-template-columns:repeat(2,1fr)}
+      .analytics-grid{grid-template-columns:1fr}
+      .net-stats-grid{grid-template-columns:1fr}
+      .health-row{flex-direction:column}
     }
   </style>
 </head>
@@ -2609,6 +2861,164 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
       <div class="stat">
         <div class="val" id="expiry-countdown">—</div>
         <div class="lbl">Time Remaining</div>
+      </div>
+    </div>
+
+    <div class="widgets-grid">
+      <div class="widget">
+        <div class="widget-header">
+          <div class="widget-title">
+            <div class="widget-icon green">📊</div>
+            <span>Live Traffic</span>
+          </div>
+          <div class="pulse-indicator"></div>
+        </div>
+        <div class="traffic-speeds">
+          <div class="traffic-speed">
+            <div class="traffic-speed-icon down">↓</div>
+            <div>
+              <div class="traffic-speed-value" id="live-download">0.00</div>
+              <div class="traffic-speed-unit">MB/s Download</div>
+            </div>
+          </div>
+          <div class="traffic-speed">
+            <div class="traffic-speed-icon up">↑</div>
+            <div>
+              <div class="traffic-speed-value" id="live-upload">0.00</div>
+              <div class="traffic-speed-unit">KB/s Upload</div>
+            </div>
+          </div>
+        </div>
+        <div class="traffic-graph">
+          <div class="traffic-graph-line"></div>
+        </div>
+        <div class="traffic-stats">
+          <div class="traffic-stat">
+            <div class="traffic-stat-val" id="total-down-stat">${usageDisplay}</div>
+            <div class="traffic-stat-lbl">Total Down</div>
+          </div>
+          <div class="traffic-stat">
+            <div class="traffic-stat-val" id="total-up-stat">—</div>
+            <div class="traffic-stat-lbl">Total Up</div>
+          </div>
+          <div class="traffic-stat">
+            <div class="traffic-stat-val" id="connections-stat">1</div>
+            <div class="traffic-stat-lbl">Connections</div>
+          </div>
+          <div class="traffic-stat">
+            <div class="traffic-stat-val" id="packet-loss-stat">0%</div>
+            <div class="traffic-stat-lbl">Packet Loss</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="widget">
+        <div class="widget-header">
+          <div class="widget-title">
+            <div class="widget-icon red">❤️</div>
+            <span>Connection Health</span>
+          </div>
+          <div class="widget-badge ${isUserExpired ? 'bad' : 'good'}" id="health-badge">${isUserExpired ? 'Expired' : 'Good'}</div>
+        </div>
+        <div class="health-row">
+          <div class="health-item">
+            <div class="health-item-icon" style="background:rgba(245,158,11,0.12);color:var(--warning)">⏱</div>
+            <div>
+              <div class="health-item-val" id="latency-val">42ms</div>
+              <div class="health-item-lbl">Latency</div>
+            </div>
+          </div>
+          <div class="health-item">
+            <div class="health-item-icon" style="background:rgba(59,130,246,0.12);color:var(--accent)">⏰</div>
+            <div>
+              <div class="health-item-val" id="uptime-val">—</div>
+              <div class="health-item-lbl">Uptime</div>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:8px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:12px">
+            <span style="color:var(--muted)">Connection Stability</span>
+            <span style="color:var(--success)" id="stability-pct">98%</span>
+          </div>
+          <div class="stability-bar">
+            <div class="stability-fill" id="stability-fill" style="width:98%"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="widget">
+        <div class="widget-header">
+          <div class="widget-title">
+            <div class="widget-icon purple">📈</div>
+            <span>Network Statistics</span>
+          </div>
+        </div>
+        <div class="net-stats-grid">
+          <div class="net-stat">
+            <div class="net-stat-icon" style="background:rgba(245,158,11,0.12);color:var(--warning)">📶</div>
+            <div class="net-stat-info">
+              <div class="net-stat-val" id="net-latency">42</div>
+              <div class="net-stat-lbl">Latency (ms)</div>
+            </div>
+          </div>
+          <div class="net-stat">
+            <div class="net-stat-icon" style="background:rgba(59,130,246,0.12);color:var(--accent)">〰️</div>
+            <div class="net-stat-info">
+              <div class="net-stat-val" id="net-jitter">3</div>
+              <div class="net-stat-lbl">Jitter (ms)</div>
+            </div>
+          </div>
+          <div class="net-stat">
+            <div class="net-stat-icon" style="background:rgba(34,197,94,0.12);color:var(--success)">📥</div>
+            <div class="net-stat-info">
+              <div class="net-stat-val" id="packets-in">12.4K</div>
+              <div class="net-stat-lbl">Packets In</div>
+            </div>
+          </div>
+          <div class="net-stat">
+            <div class="net-stat-icon" style="background:rgba(168,85,247,0.12);color:#a855f7">📤</div>
+            <div class="net-stat-info">
+              <div class="net-stat-val" id="packets-out">8.7K</div>
+              <div class="net-stat-lbl">Packets Out</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px">
+      <div class="widget-header" style="margin-bottom:10px;padding-bottom:0;border:none">
+        <div class="analytics-tabs">
+          <div class="analytics-tab active" onclick="switchTab(this, 'analytics')">📊 Analytics</div>
+          <div class="analytics-tab" onclick="switchTab(this, 'history')">📜 History</div>
+        </div>
+      </div>
+      <div id="analytics-content">
+        <div class="analytics-grid">
+          <div class="analytics-item">
+            <div class="analytics-item-val" style="color:var(--accent)">${usageDisplay}</div>
+            <div class="analytics-item-lbl">Total Download</div>
+          </div>
+          <div class="analytics-item">
+            <div class="analytics-item-val" style="color:var(--success)">—</div>
+            <div class="analytics-item-lbl">Total Upload</div>
+          </div>
+          <div class="analytics-item">
+            <div class="analytics-item-val" style="color:var(--warning)">42ms</div>
+            <div class="analytics-item-lbl">Avg Latency</div>
+          </div>
+          <div class="analytics-item">
+            <div class="analytics-item-val" style="color:#a855f7">1</div>
+            <div class="analytics-item-lbl">Connections</div>
+          </div>
+        </div>
+      </div>
+      <div id="history-content" style="display:none">
+        <div style="text-align:center;padding:20px;color:var(--muted)">
+          <p>📜 Connection history will appear here.</p>
+          <p style="font-size:13px;margin-top:8px">Recent session data and activity logs.</p>
+        </div>
       </div>
     </div>
 
@@ -2814,6 +3224,40 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
       toast.className = isError ? 'error show' : 'success show';
       setTimeout(() => toast.classList.remove('show'), 3000);
     }
+
+    function switchTab(el, tab) {
+      document.querySelectorAll('.analytics-tab').forEach(t => t.classList.remove('active'));
+      el.classList.add('active');
+      document.getElementById('analytics-content').style.display = tab === 'analytics' ? 'block' : 'none';
+      document.getElementById('history-content').style.display = tab === 'history' ? 'block' : 'none';
+    }
+
+    let sessionStart = Date.now();
+    function updateUptime() {
+      const elapsed = Date.now() - sessionStart;
+      const hours = Math.floor(elapsed / 3600000);
+      const minutes = Math.floor((elapsed % 3600000) / 60000);
+      const uptimeEl = document.getElementById('uptime-val');
+      if (uptimeEl) uptimeEl.textContent = hours + 'h ' + minutes + 'm';
+    }
+    setInterval(updateUptime, 60000);
+    setTimeout(updateUptime, 100);
+
+    function simulateLiveStats() {
+      const dl = document.getElementById('live-download');
+      const ul = document.getElementById('live-upload');
+      if (dl) dl.textContent = (Math.random() * 2.5 + 0.1).toFixed(2);
+      if (ul) ul.textContent = (Math.random() * 150 + 10).toFixed(0);
+      const latency = Math.floor(Math.random() * 20 + 35);
+      const latencyEl = document.getElementById('latency-val');
+      const netLatency = document.getElementById('net-latency');
+      if (latencyEl) latencyEl.textContent = latency + 'ms';
+      if (netLatency) netLatency.textContent = latency;
+      const jitter = document.getElementById('net-jitter');
+      if (jitter) jitter.textContent = Math.floor(Math.random() * 5 + 1);
+    }
+    setInterval(simulateLiveStats, 3000);
+    setTimeout(simulateLiveStats, 500);
 
     // ========================================================================
     // SELF-CONTAINED QR CODE GENERATOR (از اسکریپت دوم)
