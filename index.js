@@ -1716,12 +1716,12 @@ const adminPanelHTML = `<!DOCTYPE html>
         </div>
         <div class="form-group" style="margin-top: 16px;">
           <label for="editDataLimit">Data Limit</label>
-          <div style="display: flex; gap: 8px;">
-            <input type="number" id="editDataLimit" min="0" step="0.01" style="flex: 1;">
-            <select id="editDataUnit">
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <input type="number" id="editDataLimit" min="0" step="0.01" placeholder="Enter limit" style="flex: 1; min-width: 100px;">
+            <select id="editDataUnit" style="min-width: 110px;">
               <option>KB</option>
               <option>MB</option>
-              <option>GB</option>
+              <option selected>GB</option>
               <option>TB</option>
               <option value="unlimited">Unlimited</option>
             </select>
@@ -3420,9 +3420,10 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
             <div>
               <h3 style="font-size:16px;margin:12px 0 8px;color:var(--accent-2);">Xray / V2Ray Subscription</h3>
               <div class="buttons">
-                <button class="btn primary" data-action="copy" data-url="xray">📋 Copy Xray Link</button>
+                <button class="btn primary" data-action="copy" data-url="xray">📋 Copy Sub Link</button>
+                <button class="btn ghost" data-action="copy-config" data-config="xray">📋 Copy Config</button>
                 <button class="btn ghost" data-action="toggle" data-target="xray-config">View Config</button>
-                <button class="btn ghost" data-action="qr" data-url="xray">QR Code</button>
+                <button class="btn ghost" data-action="qr" data-config="xray">📱 QR Code</button>
               </div>
               <pre class="config hidden" id="xray-config">${escapeHTML(singleXrayConfig)}</pre>
             </div>
@@ -3430,9 +3431,10 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
             <div>
               <h3 style="font-size:16px;margin:12px 0 8px;color:var(--accent-2);">Sing-Box / Clash Subscription</h3>
               <div class="buttons">
-                <button class="btn primary" data-action="copy" data-url="singbox">📋 Copy Singbox Link</button>
+                <button class="btn primary" data-action="copy" data-url="singbox">📋 Copy Sub Link</button>
+                <button class="btn ghost" data-action="copy-config" data-config="singbox">📋 Copy Config</button>
                 <button class="btn ghost" data-action="toggle" data-target="sb-config">View Config</button>
-                <button class="btn ghost" data-action="qr" data-url="singbox">QR Code</button>
+                <button class="btn ghost" data-action="qr" data-config="singbox">📱 QR Code</button>
               </div>
               <pre class="config hidden" id="sb-config">${escapeHTML(singleSingboxConfig)}</pre>
             </div>
@@ -4127,15 +4129,17 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
           break;
         }
         
+        case 'copy-config': {
+          const configType = btn.dataset.config;
+          const config = configType === 'xray' ? window.CONFIG.singleXrayConfig : window.CONFIG.singleSingboxConfig;
+          copyToClipboard(config, btn);
+          break;
+        }
+        
         case 'qr': {
-          const urlType = btn.dataset.url;
           const configType = btn.dataset.config;
           let text;
-          if (urlType === 'xray') {
-            text = window.CONFIG.subXrayUrl;
-          } else if (urlType === 'singbox') {
-            text = window.CONFIG.subSbUrl;
-          } else if (configType === 'xray') {
+          if (configType === 'xray') {
             text = window.CONFIG.singleXrayConfig;
           } else if (configType === 'singbox') {
             text = window.CONFIG.singleSingboxConfig;
