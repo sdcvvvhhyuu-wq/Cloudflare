@@ -1,62 +1,83 @@
 // @ts-nocheck
-// ============================================================================
-// ULTIMATE VLESS PROXY WORKER - COMPLETE FUNCTIONAL VERSION
-// ============================================================================
-// ترکیب کامل قابلیت‌های امنیتی پیشرفته با منطق اتصال کارآمد
-// ============================================================================
+/**
+ * ============================================================================
+ * ULTIMATE VLESS PROXY WORKER - COMPLETE UNIFIED VERSION
+ * ============================================================================
+ * 
+ * Combined Features:
+ * - Advanced Admin Panel with Auto-Refresh
+ * - User Panel with Self-Contained QR Code Generator
+ * - Health Check & Auto-Switching System
+ * - Scamalytics IP Reputation Check
+ * - RASPS (Responsive Adaptive Smart Polling)
+ * - Complete Geo-location Detection
+ * - D1 Database Integration
+ * - Full Security Headers & CSRF Protection
+ * 
+ * Last Updated: December 2025
+ * ============================================================================
+ */
 
 import { connect } from 'cloudflare:sockets';
 
 // ============================================================================
-// CONFIGURATION
+// CONFIGURATION SECTION
 // ============================================================================
 
 const Config = {
   userID: 'd342d11e-d424-4583-b36e-524ab1f0afa4',
   proxyIPs: ['nima.nscl.ir:443', 'bpb.yousef.isegaro.com:443'],
+  
   scamalytics: {
-    username: '', 
-    apiKey: '',
+    username: 'victoriacrossn',
+    apiKey: 'ed89b4fef21aba43c15cdd15cff2138dd8d3bbde5aaaa4690ad8e94990448516',
     baseUrl: 'https://api12.scamalytics.com/v3/',
   },
+  
   socks5: {
     enabled: false,
     relayMode: false,
     address: '',
   },
-  
+
   async fromEnv(env) {
     let selectedProxyIP = null;
 
+    // Health Check & Auto-Switching from DB (از اسکریپت دوم)
     if (env.DB) {
       try {
-        const { results } = await env.DB.prepare("SELECT ip_port FROM proxy_health WHERE is_healthy = 1 ORDER BY latency_ms ASC LIMIT 1").all();
+        const { results } = await env.DB.prepare(
+          "SELECT ip_port FROM proxy_health WHERE is_healthy = 1 ORDER BY latency_ms ASC LIMIT 1"
+        ).all();
         selectedProxyIP = results[0]?.ip_port || null;
         if (selectedProxyIP) {
-          console.log(`Using best healthy proxy IP from DB: ${selectedProxyIP}`);
+          console.log(`✓ Using best healthy proxy from DB: ${selectedProxyIP}`);
         }
       } catch (e) {
         console.error(`Failed to read proxy health from DB: ${e.message}`);
       }
     }
 
+    // Fallback to environment variable
     if (!selectedProxyIP) {
       selectedProxyIP = env.PROXYIP;
       if (selectedProxyIP) {
-        console.log(`Using proxy IP from env.PROXYIP: ${selectedProxyIP}`);
+        console.log(`✓ Using proxy from env.PROXYIP: ${selectedProxyIP}`);
       }
     }
     
+    // Final fallback to hardcoded list
     if (!selectedProxyIP) {
       selectedProxyIP = this.proxyIPs[Math.floor(Math.random() * this.proxyIPs.length)];
       if (selectedProxyIP) {
-        console.log(`Using proxy IP from hardcoded list: ${selectedProxyIP}`);
+        console.log(`✓ Using proxy from config list: ${selectedProxyIP}`);
       }
     }
     
+    // Critical fallback
     if (!selectedProxyIP) {
-        console.error("CRITICAL: No proxy IP could be determined");
-        selectedProxyIP = this.proxyIPs[0]; 
+      console.error('CRITICAL: No proxy IP available');
+      selectedProxyIP = this.proxyIPs[0]; 
     }
     
     const [proxyHost, proxyPort = '443'] = selectedProxyIP.split(':');
@@ -80,24 +101,37 @@ const Config = {
   },
 };
 
+// ============================================================================
+// CONSTANTS - ترکیب تمام ثابت‌ها از هر دو اسکریپت
+// ============================================================================
+
 const CONST = {
+  // Protocol constants
   ED_PARAMS: { ed: 2560, eh: 'Sec-WebSocket-Protocol' },
   VLESS_PROTOCOL: 'vless',
   WS_READY_STATE_OPEN: 1,
   WS_READY_STATE_CLOSING: 2,
+  
+  // Admin panel constants
   ADMIN_LOGIN_FAIL_LIMIT: 5,
   ADMIN_LOGIN_LOCK_TTL: 600,
+  
+  // Security constants
   SCAMALYTICS_THRESHOLD: 50,
   USER_PATH_RATE_LIMIT: 20,
   USER_PATH_RATE_TTL: 60,
-  AUTO_REFRESH_INTERVAL: 60000,
+  
+  // Auto-refresh constants (از اسکریپت اول)
+  AUTO_REFRESH_INTERVAL: 60000, // 1 minute
+  
+  // Database maintenance constants (از اسکریپت دوم)
   IP_CLEANUP_AGE_DAYS: 30,
-  HEALTH_CHECK_INTERVAL: 300000,
+  HEALTH_CHECK_INTERVAL: 300000, // 5 minutes
   HEALTH_CHECK_TIMEOUT: 5000,
 };
 
 // ============================================================================
-// SECURITY & HELPER FUNCTIONS
+// CORE SECURITY & HELPER FUNCTIONS - ترکیب کامل از هر دو اسکریپت
 // ============================================================================
 
 function generateNonce() {
@@ -113,7 +147,8 @@ function addSecurityHeaders(headers, nonce, cspDomains = {}) {
     "object-src 'none'",
     "frame-ancestors 'none'",
     "base-uri 'self'",
-    nonce ? `script-src 'nonce-${nonce}' 'unsafe-inline' https://cdnjs.cloudflare.com https://unpkg.com` : "script-src 'self' https://cdnjs.cloudflare.com https://unpkg.com 'unsafe-inline'",
+    nonce ? `script-src 'nonce-${nonce}' 'unsafe-inline' https://cdnjs.cloudflare.com https://unpkg.com` : 
+            "script-src 'self' https://cdnjs.cloudflare.com https://unpkg.com 'unsafe-inline'",
     "style-src 'self' 'unsafe-inline' 'unsafe-hashes'",
     `img-src 'self' data: https: blob: ${cspDomains.img || ''}`.trim(),
     `connect-src 'self' https: ${cspDomains.connect || ''}`.trim(),
@@ -132,10 +167,7 @@ function addSecurityHeaders(headers, nonce, cspDomains = {}) {
 }
 
 function timingSafeEqual(a, b) {
-  if (typeof a !== 'string' || typeof b !== 'string') {
-    return false;
-  }
-
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
   const aLen = a.length;
   const bLen = b.length;
   let result = 0;
@@ -190,6 +222,10 @@ async function formatBytes(bytes) {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
+
+// ============================================================================
+// KEY-VALUE STORAGE FUNCTIONS (D1-based) - از اسکریپت دوم
+// ============================================================================
 
 async function kvGet(db, key, type = 'text') {
   if (!db) {
@@ -257,6 +293,10 @@ async function kvDelete(db, key) {
   }
 }
 
+// ============================================================================
+// USER DATA MANAGEMENT - با کش بهبود یافته
+// ============================================================================
+
 async function getUserData(env, uuid, ctx) {
   try {
     if (!isValidUUID(uuid)) return null;
@@ -267,6 +307,7 @@ async function getUserData(env, uuid, ctx) {
     
     const cacheKey = `user:${uuid}`;
     
+    // Try cache first
     try {
       const cachedData = await kvGet(env.DB, cacheKey, 'json');
       if (cachedData && cachedData.uuid) return cachedData;
@@ -274,9 +315,11 @@ async function getUserData(env, uuid, ctx) {
       console.error(`Failed to get cached data for ${uuid}`, e);
     }
 
+    // Fetch from database
     const userFromDb = await env.DB.prepare("SELECT * FROM users WHERE uuid = ?").bind(uuid).first();
     if (!userFromDb) return null;
     
+    // Update cache asynchronously
     const cachePromise = kvPut(env.DB, cacheKey, userFromDb, { expirationTtl: 3600 });
     
     if (ctx) {
@@ -303,6 +346,7 @@ async function updateUsage(env, uuid, bytes, ctx) {
   let lockAcquired = false;
   
   try {
+    // Acquire lock with timeout
     while (!lockAcquired) {
       const existingLock = await kvGet(env.DB, usageLockKey);
       if (!existingLock) {
@@ -314,9 +358,9 @@ async function updateUsage(env, uuid, bytes, ctx) {
     }
     
     const usage = Math.round(bytes);
-    const updatePromise = env.DB.prepare("UPDATE users SET traffic_used = traffic_used + ? WHERE uuid = ?")
-      .bind(usage, uuid)
-      .run();
+    const updatePromise = env.DB.prepare(
+      "UPDATE users SET traffic_used = traffic_used + ? WHERE uuid = ?"
+    ).bind(usage, uuid).run();
     
     const deleteCachePromise = kvDelete(env.DB, `user:${uuid}`);
     
@@ -338,9 +382,33 @@ async function updateUsage(env, uuid, bytes, ctx) {
   }
 }
 
+async function cleanupOldIps(env, ctx) {
+  if (!env.DB) {
+    console.warn('cleanupOldIps: D1 binding not available');
+    return;
+  }
+  try {
+    const cleanupPromise = env.DB.prepare(
+      "DELETE FROM user_ips WHERE last_seen < datetime('now', ?)"
+    ).bind(`-${CONST.IP_CLEANUP_AGE_DAYS} days`).run();
+    
+    if (ctx) {
+      ctx.waitUntil(cleanupPromise);
+    } else {
+      await cleanupPromise;
+    }
+  } catch (e) {
+    console.error(`cleanupOldIps error: ${e.message}`);
+  }
+}
+
+// ============================================================================
+// SCAMALYTICS IP REPUTATION CHECK - از هر دو اسکریپت
+// ============================================================================
+
 async function isSuspiciousIP(ip, scamalyticsConfig, threshold = CONST.SCAMALYTICS_THRESHOLD) {
   if (!scamalyticsConfig.username || !scamalyticsConfig.apiKey) {
-    console.warn(`⚠️  Scamalytics API credentials not configured. IP ${ip} allowed by default (fail-open mode).`);
+    console.warn(`⚠️  Scamalytics not configured. IP ${ip} allowed (fail-open).`);
     return false;
   }
 
@@ -350,6 +418,7 @@ async function isSuspiciousIP(ip, scamalyticsConfig, threshold = CONST.SCAMALYTI
   try {
     const url = `${scamalyticsConfig.baseUrl}score?username=${scamalyticsConfig.username}&ip=${ip}&key=${scamalyticsConfig.apiKey}`;
     const response = await fetch(url, { signal: controller.signal });
+    
     if (!response.ok) {
       console.warn(`Scamalytics API returned ${response.status} for ${ip}. Allowing (fail-open).`);
       return false;
@@ -367,6 +436,92 @@ async function isSuspiciousIP(ip, scamalyticsConfig, threshold = CONST.SCAMALYTI
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+// ============================================================================
+// 2FA (TOTP) VALIDATION SYSTEM - از اسکریپت دوم
+// ============================================================================
+
+function base32ToBuffer(base32) {
+  const base32Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  const str = base32.toUpperCase().replace(/=+$/, '');
+  
+  let bits = 0;
+  let value = 0;
+  let index = 0;
+  const output = new Uint8Array(Math.floor(str.length * 5 / 8));
+  
+  for (let i = 0; i < str.length; i++) {
+    const char = str[i];
+    const charValue = base32Chars.indexOf(char);
+    if (charValue === -1) throw new Error('Invalid Base32 character');
+    
+    value = (value << 5) | charValue;
+    bits += 5;
+    
+    if (bits >= 8) {
+      output[index++] = (value >>> (bits - 8)) & 0xFF;
+      bits -= 8;
+    }
+  }
+  return output.buffer;
+}
+
+async function generateHOTP(secretBuffer, counter) {
+  const counterBuffer = new ArrayBuffer(8);
+  const counterView = new DataView(counterBuffer);
+  counterView.setBigUint64(0, BigInt(counter), false);
+  
+  const key = await crypto.subtle.importKey(
+    'raw',
+    secretBuffer,
+    { name: 'HMAC', hash: 'SHA-1' },
+    false,
+    ['sign']
+  );
+  
+  const hmac = await crypto.subtle.sign('HMAC', key, counterBuffer);
+  const hmacBuffer = new Uint8Array(hmac);
+  
+  const offset = hmacBuffer[hmacBuffer.length - 1] & 0x0F;
+  const binary = 
+    ((hmacBuffer[offset] & 0x7F) << 24) |
+    ((hmacBuffer[offset + 1] & 0xFF) << 16) |
+    ((hmacBuffer[offset + 2] & 0xFF) << 8) |
+    (hmacBuffer[offset + 3] & 0xFF);
+    
+  const otp = binary % 1000000;
+  
+  return otp.toString().padStart(6, '0');
+}
+
+async function validateTOTP(secret, code) {
+  if (!secret || !code || code.length !== 6 || !/^\d{6}$/.test(code)) {
+    return false;
+  }
+  
+  let secretBuffer;
+  try {
+    secretBuffer = base32ToBuffer(secret);
+  } catch (e) {
+    console.error("Failed to decode TOTP secret:", e.message);
+    return false;
+  }
+  
+  const timeStep = 30;
+  const epoch = Math.floor(Date.now() / 1000);
+  const currentCounter = Math.floor(epoch / timeStep);
+  
+  const counters = [currentCounter, currentCounter - 1, currentCounter + 1];
+
+  for (const counter of counters) {
+    const generatedCode = await generateHOTP(secretBuffer, counter);
+    if (timingSafeEqual(code, generatedCode)) {
+      return true;
+    }
+  }
+  
+  return false;
 }
 
 async function hashSHA256(str) {
@@ -391,66 +546,22 @@ async function checkRateLimit(db, key, limit, ttl) {
   }
 }
 
-async function ensureTablesExist(env, ctx) {
-  if (!env.DB) {
-    console.warn('ensureTablesExist: D1 binding not available');
-    return;
-  }
-  
-  try {
-    const createTables = [
-      `CREATE TABLE IF NOT EXISTS users (
-        uuid TEXT PRIMARY KEY,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        expiration_date TEXT NOT NULL,
-        expiration_time TEXT NOT NULL,
-        notes TEXT,
-        traffic_limit INTEGER,
-        traffic_used INTEGER DEFAULT 0,
-        ip_limit INTEGER DEFAULT -1
-      )`,
-      `CREATE TABLE IF NOT EXISTS user_ips (
-        uuid TEXT,
-        ip TEXT,
-        last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (uuid, ip),
-        FOREIGN KEY (uuid) REFERENCES users(uuid) ON DELETE CASCADE
-      )`,
-      `CREATE TABLE IF NOT EXISTS key_value (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL,
-        expiration INTEGER
-      )`,
-      `CREATE TABLE IF NOT EXISTS proxy_health (
-        ip_port TEXT PRIMARY KEY,
-        is_healthy INTEGER NOT NULL,
-        latency_ms INTEGER,
-        last_check INTEGER DEFAULT (strftime('%s', 'now'))
-      )`
-    ];
-    
-    const stmts = createTables.map(sql => env.DB.prepare(sql));
-    await env.DB.batch(stmts);
-    console.log('D1 tables ensured successfully');
-  } catch (e) {
-    console.error('Failed to create D1 tables:', e);
-  }
-}
-
 // ============================================================================
-// UUID STRINGIFY (از اسکریپت اول)
+// UUID UTILITIES - مشترک در هر دو اسکریپت
 // ============================================================================
 
 const byteToHex = Array.from({ length: 256 }, (_, i) => (i + 0x100).toString(16).slice(1));
 
 function unsafeStringify(arr, offset = 0) {
   return (
-    byteToHex[arr[offset]] + byteToHex[arr[offset + 1]] + byteToHex[arr[offset + 2]] + byteToHex[arr[offset + 3]] + '-' +
+    byteToHex[arr[offset]] + byteToHex[arr[offset + 1]] + 
+    byteToHex[arr[offset + 2]] + byteToHex[arr[offset + 3]] + '-' +
     byteToHex[arr[offset + 4]] + byteToHex[arr[offset + 5]] + '-' +
     byteToHex[arr[offset + 6]] + byteToHex[arr[offset + 7]] + '-' +
     byteToHex[arr[offset + 8]] + byteToHex[arr[offset + 9]] + '-' +
-    byteToHex[arr[offset + 10]] + byteToHex[arr[offset + 11]] + byteToHex[arr[offset + 12]] + 
-    byteToHex[arr[offset + 13]] + byteToHex[arr[offset + 14]] + byteToHex[arr[offset + 15]]
+    byteToHex[arr[offset + 10]] + byteToHex[arr[offset + 11]] + 
+    byteToHex[arr[offset + 12]] + byteToHex[arr[offset + 13]] + 
+    byteToHex[arr[offset + 14]] + byteToHex[arr[offset + 15]]
   ).toLowerCase();
 }
 
@@ -460,16 +571,8 @@ function stringify(arr, offset = 0) {
   return uuid;
 }
 
-function randomizeCase(str) {
-  let result = "";
-  for (let i = 0; i < str.length; i++) {
-    result += Math.random() < 0.5 ? str[i].toUpperCase() : str[i].toLowerCase();
-  }
-  return result;
-}
-
 // ============================================================================
-// SUBSCRIPTION GENERATION (از اسکریپت اول - کار می‌کند)
+// SUBSCRIPTION LINK GENERATION - ترکیب از هر دو اسکریپت
 // ============================================================================
 
 function generateRandomPath(length = 12, query = '') {
@@ -478,38 +581,38 @@ function generateRandomPath(length = 12, query = '') {
   for (let i = 0; i < length; i++) {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-  return `/${result}${query ? '?' + query : ''}`;
+  return `/${result}${query ? `?${query}` : ''}`;
 }
 
 const CORE_PRESETS = {
   xray: {
-    tls: { 
-      path: () => generateRandomPath(12, 'ed=2560'), 
-      security: 'tls', 
-      fp: 'chrome', 
-      alpn: 'http/1.1', 
-      extra: {} 
+    tls: {
+      path: () => generateRandomPath(12, 'ed=2560'),
+      security: 'tls',
+      fp: 'chrome',
+      alpn: 'http/1.1',
+      extra: {},
     },
-    tcp: { 
-      path: () => generateRandomPath(12, 'ed=2560'), 
-      security: 'none', 
-      fp: 'chrome', 
-      extra: {} 
+    tcp: {
+      path: () => generateRandomPath(12, 'ed=2560'),
+      security: 'none',
+      fp: 'chrome',
+      extra: {},
     },
   },
   sb: {
-    tls: { 
-      path: () => generateRandomPath(18), 
-      security: 'tls', 
-      fp: 'chrome', 
-      alpn: 'http/1.1', 
-      extra: CONST.ED_PARAMS 
+    tls: {
+      path: () => generateRandomPath(18),
+      security: 'tls',
+      fp: 'firefox',
+      alpn: 'h3',
+      extra: CONST.ED_PARAMS,
     },
-    tcp: { 
-      path: () => generateRandomPath(18), 
-      security: 'none', 
-      fp: 'chrome', 
-      extra: CONST.ED_PARAMS 
+    tcp: {
+      path: () => generateRandomPath(18),
+      security: 'none',
+      fp: 'firefox',
+      extra: CONST.ED_PARAMS,
     },
   },
 };
@@ -518,7 +621,27 @@ function makeName(tag, proto) {
   return `${tag}-${proto.toUpperCase()}`;
 }
 
-function createVlessLink({ userID, address, port, host, path, security, sni, fp, alpn, extra = {}, name }) {
+function randomizeCase(str) {
+  let result = '';
+  for (let i = 0; i < str.length; i++) {
+    result += Math.random() < 0.5 ? str[i].toUpperCase() : str[i].toLowerCase();
+  }
+  return result;
+}
+
+function createVlessLink({
+  userID,
+  address,
+  port,
+  host,
+  path,
+  security,
+  sni,
+  fp,
+  alpn,
+  extra = {},
+  name,
+}) {
   const params = new URLSearchParams({
     type: 'ws',
     host,
@@ -560,41 +683,56 @@ function buildLink({ core, proto, userID, hostName, address, port, tag }) {
 
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
-async function handleIpSubscription(request, core, userID, hostName) {
-  const url = new URL(request.url);
-  const subName = url.searchParams.get('name');
+// ============================================================================
+// SUBSCRIPTION HANDLER - ترکیب لیست دامنه‌ها از هر دو اسکریپت
+// ============================================================================
 
-  const CAKE_INFO = {
-    total_TB: 380,
-    base_GB: 42000,
-    daily_growth_GB: 250,
-    expire_date: "2028-4-20",
-  };
-
+async function handleIpSubscription(core, userID, hostName) {
+  // ترکیب دامنه‌ها از هر دو اسکریپت
   const mainDomains = [
     hostName,
     'creativecommons.org',
     'www.speedtest.net',
     'sky.rethinkdns.com',
     'cfip.1323123.xyz',
-    'cfip.xxxxxxxx.tk',
     'go.inmobi.com',
-    'singapore.com',
     'www.visa.com',
     'www.wto.org',
     'cf.090227.xyz',
     'cdnjs.com',
     'zula.ir',
-    'csgo.com',
-    'fbi.gov',
+    // از اسکریپت دوم:
+    'mail.tm',
+    'temp-mail.org',
+    'ipaddress.my',
+    'mdbmax.com',
+    'check-host.net',
+    'kodambroker.com',
+    'iplocation.io',
+    'whatismyip.org',
+    'www.linkedin.com',
+    'exir.io',
+    'arzex.io',
+    'ok-ex.io',
+    'arzdigital.com',
+    'pouyanit.com',
+    'auth.grok.com',
+    'grok.com',
+    'maxmind.com',
+    'whatsmyip.com',
+    'iplocation.net',
+    'ipchicken.com',
+    'showmyip.com',
+    'router-network.com',
+    'whatismyipaddress.com',
   ];
 
   const httpsPorts = [443, 8443, 2053, 2083, 2087, 2096];
   const httpPorts = [80, 8080, 8880, 2052, 2082, 2086, 2095];
-
   let links = [];
   const isPagesDeployment = hostName.endsWith('.pages.dev');
 
+  // Generate domain-based configs
   mainDomains.forEach((domain, i) => {
     links.push(
       buildLink({
@@ -623,6 +761,7 @@ async function handleIpSubscription(request, core, userID, hostName) {
     }
   });
 
+  // Fetch Cloudflare IPs
   try {
     const r = await fetch(
       'https://raw.githubusercontent.com/NiREvil/vless/refs/heads/main/Cloudflare-IPs.json',
@@ -663,194 +802,2946 @@ async function handleIpSubscription(request, core, userID, hostName) {
     console.error('Fetch IP list failed', e);
   }
 
-  const GB_in_bytes = 1024 * 1024 * 1024;
-  const TB_in_bytes = 1024 * GB_in_bytes;
-
-  const total_bytes = CAKE_INFO.total_TB * TB_in_bytes;
-  const base_bytes = CAKE_INFO.base_GB * GB_in_bytes;
-
-  const now = new Date();
-  const hours_passed = now.getHours() + now.getMinutes() / 60;
-  const daily_growth_bytes = (hours_passed / 24) * (CAKE_INFO.daily_growth_GB * GB_in_bytes);
-
-  const cake_download = base_bytes + daily_growth_bytes / 2;
-  const cake_upload = base_bytes + daily_growth_bytes / 2;
-
-  const expire_timestamp = Math.floor(new Date(CAKE_INFO.expire_date).getTime() / 1000);
-  const subInfo = `upload=${Math.round(cake_upload)}; download=${Math.round(cake_download)}; total=${total_bytes}; expire=${expire_timestamp}`;
-
-  const headers = {
+  const headers = new Headers({ 
     'Content-Type': 'text/plain;charset=utf-8',
     'Profile-Update-Interval': '6',
-    'Subscription-Userinfo': subInfo,
-  };
-
-  if (subName) {
-    headers['Profile-Title'] = subName;
-  }
-
-  return new Response(btoa(links.join('\n')), {
-    headers: headers,
   });
+  addSecurityHeaders(headers, null, {});
+
+  return new Response(btoa(links.join('\n')), { headers });
 }
 
 // ============================================================================
-// VLESS PROTOCOL HANDLERS (منطق اتصال از اسکریپت اول - کار می‌کند)
+// DATABASE INITIALIZATION - از اسکریپت دوم
 // ============================================================================
 
-async function ProtocolOverWSHandler(request, config) {
-  const webSocketPair = new WebSocketPair();
-  const [client, webSocket] = Object.values(webSocketPair);
-  webSocket.accept();
+async function ensureTablesExist(env, ctx) {
+  if (!env.DB) {
+    console.warn('ensureTablesExist: D1 binding not available');
+    return;
+  }
   
-  let address = '';
-  let portWithRandomLog = '';
-  let udpStreamWriter = null;
-  
-  const log = (info, event) => {
-    console.log(`[${address}:${portWithRandomLog}] ${info}`, event || '');
-  };
-  
-  const earlyDataHeader = request.headers.get('Sec-WebSocket-Protocol') || '';
-  const readableWebSocketStream = MakeReadableWebSocketStream(webSocket, earlyDataHeader, log);
-  let remoteSocketWapper = { value: null };
-  let isDns = false;
+  try {
+    const createTables = [
+      `CREATE TABLE IF NOT EXISTS users (
+        uuid TEXT PRIMARY KEY,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        expiration_date TEXT NOT NULL,
+        expiration_time TEXT NOT NULL,
+        notes TEXT,
+        traffic_limit INTEGER,
+        traffic_used INTEGER DEFAULT 0,
+        ip_limit INTEGER DEFAULT -1
+      )`,
+      `CREATE TABLE IF NOT EXISTS user_ips (
+        uuid TEXT,
+        ip TEXT,
+        last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (uuid, ip),
+        FOREIGN KEY (uuid) REFERENCES users(uuid) ON DELETE CASCADE
+      )`,
+      `CREATE TABLE IF NOT EXISTS key_value (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        expiration INTEGER
+      )`,
+      `CREATE TABLE IF NOT EXISTS proxy_health (
+        ip_port TEXT PRIMARY KEY,
+        is_healthy INTEGER NOT NULL,
+        latency_ms INTEGER,
+        last_check INTEGER DEFAULT (strftime('%s', 'now'))
+      )`
+    ];
+    
+    const stmts = createTables.map(sql => env.DB.prepare(sql));
+    await env.DB.batch(stmts);
+    console.log('✓ D1 tables initialized successfully');
+  } catch (e) {
+    console.error('Failed to create D1 tables:', e);
+  }
+}
 
-  readableWebSocketStream
-    .pipeTo(
-      new WritableStream({
-        async write(chunk, controller) {
-          if (udpStreamWriter) {
-            return udpStreamWriter.write(chunk);
+// ============================================================================
+// HEALTH CHECK SYSTEM - از اسکریپت دوم با بهبودهای اسکریپت اول
+// ============================================================================
+
+async function performHealthCheck(env, ctx) {
+  if (!env.DB) {
+    console.warn('performHealthCheck: D1 binding not available');
+    return;
+  }
+  
+  const proxyIps = env.PROXYIPS 
+    ? env.PROXYIPS.split(',').map(ip => ip.trim()) 
+    : Config.proxyIPs;
+  
+  const healthStmts = [];
+  
+  for (const ipPort of proxyIps) {
+    const [host, port = '443'] = ipPort.split(':');
+    let latency = null;
+    let isHealthy = 0;
+    
+    const start = Date.now();
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), CONST.HEALTH_CHECK_TIMEOUT);
+      
+      const response = await fetch(`https://${host}:${port}`, { 
+        signal: controller.signal,
+        method: 'HEAD',
+      });
+      clearTimeout(timeoutId);
+      
+      if (response.ok || response.status === 404) {
+        latency = Date.now() - start;
+        isHealthy = 1;
+      }
+    } catch (e) {
+      console.error(`Health check failed for ${ipPort}: ${e.message}`);
+    }
+    
+    healthStmts.push(
+      env.DB.prepare(
+        "INSERT OR REPLACE INTO proxy_health (ip_port, is_healthy, latency_ms, last_check) VALUES (?, ?, ?, ?)"
+      ).bind(ipPort, isHealthy, latency, Math.floor(Date.now() / 1000))
+    );
+  }
+  
+  try {
+    await env.DB.batch(healthStmts);
+    console.log('✓ Proxy health check completed');
+  } catch (e) {
+    console.error(`performHealthCheck batch error: ${e.message}`);
+  }
+}
+
+// ============================================================================
+// ADMIN PANEL HTML - ترکیب از هر دو اسکریپت با تمام قابلیت‌ها
+// ============================================================================
+
+const adminLoginHTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Login - VLESS Proxy</title>
+  <style nonce="CSP_NONCE_PLACEHOLDER">
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      display: flex; justify-content: center; align-items: center;
+      min-height: 100vh; margin: 0;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    }
+    .login-container {
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(10px);
+      padding: 40px;
+      border-radius: 16px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      text-align: center;
+      width: 100%;
+      max-width: 400px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    h1 {
+      color: #ffffff;
+      margin-bottom: 24px;
+      font-weight: 600;
+      font-size: 28px;
+    }
+    form { display: flex; flex-direction: column; gap: 16px; }
+    input[type="password"], input[type="text"] {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #ffffff;
+      padding: 14px;
+      border-radius: 8px;
+      font-size: 16px;
+      transition: all 0.3s;
+    }
+    input:focus {
+      outline: none;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+      background: rgba(255, 255, 255, 0.15);
+    }
+    input::placeholder { color: rgba(255, 255, 255, 0.5); }
+    button {
+      background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+      color: white;
+      border: none;
+      padding: 14px;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4);
+    }
+    button:active { transform: translateY(0); }
+    .error {
+      color: #ff6b6b;
+      margin-top: 16px;
+      font-size: 14px;
+      background: rgba(255, 107, 107, 0.1);
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 107, 107, 0.3);
+    }
+    @media (max-width: 480px) {
+      .login-container { padding: 30px 20px; margin: 20px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <h1>🔐 Admin Login</h1>
+    <form method="POST" action="ADMIN_PATH_PLACEHOLDER">
+      <input type="password" name="password" placeholder="Enter admin password" required autocomplete="current-password">
+      <input type="text" name="totp" placeholder="2FA Code (if enabled)" autocomplete="off" inputmode="numeric" pattern="[0-9]*" maxlength="6">
+      <button type="submit">Login</button>
+    </form>
+  </div>
+</body>
+</html>`;
+
+// Admin Panel HTML با تمام قابلیت‌های هر دو اسکریپت
+const adminPanelHTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard - VLESS Proxy Manager</title>
+  <style nonce="CSP_NONCE_PLACEHOLDER">
+    :root {
+      --bg-main: #111827; --bg-card: #1F2937; --border: #374151;
+      --text-primary: #F9FAFB; --text-secondary: #9CA3AF;
+      --accent: #3B82F6; --accent-hover: #2563EB;
+      --danger: #EF4444; --danger-hover: #DC2626;
+      --success: #22C55E; --warning: #F59e0b;
+      --btn-secondary-bg: #4B5563;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: linear-gradient(180deg, var(--bg-main) 0%, #0f1419 100%);
+      color: var(--text-primary);
+      font-size: 14px;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 40px 20px;
+    }
+    h1, h2 { font-weight: 600; }
+    h1 {
+      font-size: 28px;
+      margin-bottom: 24px;
+      background: linear-gradient(135deg, #3B82F6 0%, #8B5CF6 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    h2 {
+      font-size: 18px;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 12px;
+      margin-bottom: 20px;
+    }
+    .card {
+      background: var(--bg-card);
+      border-radius: 12px;
+      padding: 24px;
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      margin-bottom: 24px;
+      transition: all 0.3s;
+    }
+    .card:hover {
+      box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+      border-color: var(--accent);
+    }
+    .dashboard-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+    .stat-card {
+      background: linear-gradient(135deg, var(--bg-card) 0%, #1a222e 100%);
+      padding: 20px;
+      border-radius: 12px;
+      text-align: center;
+      border: 1px solid var(--border);
+      transition: all 0.3s;
+    }
+    .stat-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 20px rgba(59, 130, 246, 0.2);
+    }
+    .stat-value {
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+    .stat-label {
+      font-size: 12px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      align-items: flex-end;
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+    }
+    .form-group label {
+      margin-bottom: 8px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      font-size: 13px;
+    }
+    input[type="text"], input[type="date"], input[type="time"], 
+    input[type="number"], select {
+      width: 100%;
+      background: #374151;
+      border: 1px solid #4B5563;
+      color: var(--text-primary);
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+    .btn {
+      padding: 12px 20px;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 14px;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+      color: white;
+    }
+    .btn-primary:hover {
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+      transform: translateY(-2px);
+    }
+    .btn-secondary {
+      background: var(--btn-secondary-bg);
+      color: white;
+    }
+    .btn-secondary:hover { background: #6B7280; }
+    .btn-danger {
+      background: var(--danger);
+      color: white;
+    }
+    .btn-danger:hover {
+      background: var(--danger-hover);
+      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+    }
+    .table-wrapper {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    th, td {
+      padding: 14px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      color: var(--text-secondary);
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      background: rgba(59, 130, 246, 0.05);
+    }
+    td {
+      color: var(--text-primary);
+      font-size: 13px;
+    }
+    tr:hover {
+      background: rgba(59, 130, 246, 0.05);
+    }
+    .status-badge {
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      display: inline-block;
+    }
+    .status-active {
+      background: rgba(34, 197, 94, 0.2);
+      color: var(--success);
+      border: 1px solid var(--success);
+    }
+    .status-expired {
+      background: rgba(239, 68, 68, 0.2);
+      color: var(--danger);
+      border: 1px solid var(--danger);
+    }
+    .uuid-cell {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-copy-uuid {
+      padding: 4px 8px;
+      font-size: 11px;
+      background: rgba(59, 130, 246, 0.1);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      color: var(--accent);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-copy-uuid:hover {
+      background: rgba(59, 130, 246, 0.2);
+      border-color: var(--accent);
+    }
+    .btn-copy-uuid.copied {
+      background: rgba(34, 197, 94, 0.2);
+      border-color: var(--success);
+      color: var(--success);
+    }
+    #toast {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: var(--bg-card);
+      color: white;
+      padding: 16px 24px;
+      border-radius: 12px;
+      z-index: 1001;
+      display: none;
+      border: 1px solid var(--border);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+      animation: slideIn 0.3s ease;
+    }
+    @keyframes slideIn {
+      from { transform: translateX(400px); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    #toast.show { display: block; }
+    #toast.success { border-left: 4px solid var(--success); }
+    #toast.error { border-left: 4px solid var(--danger); }
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.7);
+      z-index: 1000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.3s;
+    }
+    .modal-overlay.show {
+      opacity: 1;
+      visibility: visible;
+    }
+    .modal-content {
+      background: var(--bg-card);
+      padding: 32px;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      width: 90%;
+      max-width: 600px;
+      max-height: 90vh;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      transform: scale(0.9);
+      transition: transform 0.3s;
+    }
+    .modal-overlay.show .modal-content {
+      transform: scale(1);
+    }
+    .search-input {
+      width: 100%;
+      margin-bottom: 16px;
+      padding: 12px 16px;
+      background: #374151;
+      border: 1px solid #4B5563;
+      color: var(--text-primary);
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    .time-quick-set-group {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+    .btn-outline-secondary {
+      background: transparent;
+      border: 1px solid var(--btn-secondary-bg);
+      color: var(--text-secondary);
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+    .btn-outline-secondary:hover {
+      background: var(--btn-secondary-bg);
+      color: white;
+    }
+    @media (max-width: 768px) {
+      .container { padding: 20px 12px; }
+      .dashboard-stats { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+      .form-grid { grid-template-columns: 1fr; }
+      h1 { font-size: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>⚡ Admin Dashboard</h1>
+    <div style="position: absolute; top: 20px; right: 20px; display: flex; gap: 12px;">
+      <button id="healthCheckBtn" class="btn btn-secondary">🔄 Health Check</button>
+      <button id="logoutBtn" class="btn btn-danger">🚪 Logout</button>
+    </div>
+
+    <div class="dashboard-stats">
+      <div class="stat-card">
+        <div class="stat-value" id="total-users">0</div>
+        <div class="stat-label">Total Users</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="active-users">0</div>
+        <div class="stat-label">Active Users</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="expired-users">0</div>
+        <div class="stat-label">Expired Users</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="total-traffic">0 KB</div>
+        <div class="stat-label">Total Traffic</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>➕ Create New User</h2>
+      <form id="createUserForm" class="form-grid">
+        <div class="form-group" style="grid-column: 1 / -1;">
+          <label for="uuid">UUID</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="uuid" required style="flex: 1;">
+            <button type="button" id="generateUUID" class="btn btn-secondary">🎲 Generate</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="expiryDate">Expiry Date</label>
+          <input type="date" id="expiryDate" required>
+        </div>
+        <div class="form-group">
+          <label for="expiryTime">Expiry Time (Local)</label>
+          <input type="time" id="expiryTime" step="1" required>
+          <div class="time-quick-set-group" data-target-date="expiryDate" data-target-time="expiryTime">
+            <button type="button" class="btn btn-outline-secondary" data-amount="1" data-unit="hour">+1 Hour</button>
+            <button type="button" class="btn btn-outline-secondary" data-amount="1" data-unit="day">+1 Day</button>
+            <button type="button" class="btn btn-outline-secondary" data-amount="7" data-unit="day">+1 Week</button>
+            <button type="button" class="btn btn-outline-secondary" data-amount="1" data-unit="month">+1 Month</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="notes">Notes</label>
+          <input type="text" id="notes" placeholder="Optional notes">
+        </div>
+        <div class="form-group">
+          <label for="dataLimit">Data Limit</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="number" id="dataLimit" min="0" step="0.01" placeholder="0" style="flex: 1;">
+            <select id="dataUnit">
+              <option>KB</option>
+              <option>MB</option>
+              <option>GB</option>
+              <option>TB</option>
+              <option value="unlimited" selected>Unlimited</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="ipLimit">IP Limit</label>
+          <input type="number" id="ipLimit" min="-1" step="1" placeholder="-1 (Unlimited)">
+        </div>
+        <div class="form-group">
+          <label>&nbsp;</label>
+          <button type="submit" class="btn btn-primary">✨ Create User</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>👥 User Management</h2>
+      <input type="text" id="searchInput" class="search-input" placeholder="🔍 Search by UUID or Notes...">
+      <button id="deleteSelected" class="btn btn-danger" style="margin-bottom: 16px;">🗑️ Delete Selected</button>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th><input type="checkbox" id="selectAll"></th>
+              <th>UUID</th>
+              <th>Created</th>
+              <th>Expiry (Local)</th>
+              <th>Status</th>
+              <th>Notes</th>
+              <th>Limit</th>
+              <th>Usage</th>
+              <th>IP Limit</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="userList"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="editModal" class="modal-overlay">
+    <div class="modal-content">
+      <h2>✏️ Edit User</h2>
+      <form id="editUserForm">
+        <input type="hidden" id="editUuid">
+        <div class="form-group" style="margin-top: 20px;">
+          <label for="editExpiryDate">Expiry Date</label>
+          <input type="date" id="editExpiryDate" required>
+        </div>
+        <div class="form-group" style="margin-top: 16px;">
+          <label for="editExpiryTime">Expiry Time</label>
+          <input type="time" id="editExpiryTime" step="1" required>
+          <div class="time-quick-set-group" data-target-date="editExpiryDate" data-target-time="editExpiryTime">
+            <button type="button" class="btn btn-outline-secondary" data-amount="1" data-unit="hour">+1 Hour</button>
+            <button type="button" class="btn btn-outline-secondary" data-amount="1" data-unit="day">+1 Day</button>
+            <button type="button" class="btn btn-outline-secondary" data-amount="7" data-unit="day">+1 Week</button>
+            <button type="button" class="btn btn-outline-secondary" data-amount="1" data-unit="month">+1 Month</button>
+          </div>
+        </div>
+        <div class="form-group" style="margin-top: 16px;">
+          <label for="editNotes">Notes</label>
+          <input type="text" id="editNotes">
+        </div>
+        <div class="form-group" style="margin-top: 16px;">
+          <label for="editDataLimit">Data Limit</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="number" id="editDataLimit" min="0" step="0.01" style="flex: 1;">
+            <select id="editDataUnit">
+              <option>KB</option>
+              <option>MB</option>
+              <option>GB</option>
+              <option>TB</option>
+              <option value="unlimited">Unlimited</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group" style="margin-top: 16px;">
+          <label for="editIpLimit">IP Limit</label>
+          <input type="number" id="editIpLimit" min="-1" step="1">
+        </div>
+        <div class="form-group" style="margin-top: 16px;">
+          <label>
+            <input type="checkbox" id="resetTraffic" style="width: auto; margin-right: 8px;">
+            Reset Traffic Usage
+          </label>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px;">
+          <button type="button" id="modalCancelBtn" class="btn btn-secondary">Cancel</button>
+          <button type="submit" class="btn btn-primary">💾 Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script nonce="CSP_NONCE_PLACEHOLDER">
+    // Admin Panel JavaScript - ترکیب کامل از هر دو اسکریپت
+    document.addEventListener('DOMContentLoaded', () => {
+      const API_BASE = 'ADMIN_API_BASE_PATH_PLACEHOLDER';
+      let allUsers = [];
+
+      function escapeHTML(str) {
+        if (typeof str !== 'string') return '';
+        return str.replace(/[&<>"']/g, m => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        })[m]);
+      }
+
+      async function formatBytes(bytes)      async function formatBytes(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+      }
+
+      function showToast(message, isError = false) {
+        const toast = document.getElementById('toast');
+        toast.textContent = message;
+        toast.className = isError ? 'error show' : 'success show';
+        setTimeout(() => toast.classList.remove('show'), 3000);
+      }
+
+      const getCsrfToken = () => document.cookie.split('; ').find(row => row.startsWith('csrf_token='))?.split('=')[1] || '';
+
+      const api = {
+        get: (endpoint) => fetch(API_BASE + endpoint, { credentials: 'include' }).then(handleResponse),
+        post: (endpoint, body) => fetch(API_BASE + endpoint, { 
+          method: 'POST', 
+          credentials: 'include', 
+          headers: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()}, 
+          body: JSON.stringify(body) 
+        }).then(handleResponse),
+        put: (endpoint, body) => fetch(API_BASE + endpoint, { 
+          method: 'PUT', 
+          credentials: 'include', 
+          headers: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()}, 
+          body: JSON.stringify(body) 
+        }).then(handleResponse),
+        delete: (endpoint) => fetch(API_BASE + endpoint, { 
+          method: 'DELETE', 
+          credentials: 'include', 
+          headers: {'X-CSRF-Token': getCsrfToken()} 
+        }).then(handleResponse),
+      };
+
+      async function handleResponse(response) {
+        if (response.status === 401) {
+          showToast('Session expired. Please log in again.', true);
+          setTimeout(() => window.location.reload(), 2000);
+          throw new Error('Unauthorized');
+        }
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: 'Request failed' }));
+          throw new Error(errorData.error || 'Request failed');
+        }
+        return response.status === 204 ? null : response.json();
+      }
+
+      const pad = (num) => num.toString().padStart(2, '0');
+
+      function localToUTC(dateStr, timeStr) {
+        if (!dateStr || !timeStr) return { utcDate: '', utcTime: '' };
+        const localDateTime = new Date(dateStr + 'T' + timeStr);
+        if (isNaN(localDateTime.getTime())) return { utcDate: '', utcTime: '' };
+
+        const year = localDateTime.getUTCFullYear();
+        const month = pad(localDateTime.getUTCMonth() + 1);
+        const day = pad(localDateTime.getUTCDate());
+        const hours = pad(localDateTime.getUTCHours());
+        const minutes = pad(localDateTime.getUTCMinutes());
+        const seconds = pad(localDateTime.getUTCSeconds());
+
+        return {
+          utcDate: year + '-' + month + '-' + day,
+          utcTime: hours + ':' + minutes + ':' + seconds
+        };
+      }
+
+      function utcToLocal(utcDateStr, utcTimeStr) {
+        if (!utcDateStr || !utcTimeStr) return { localDate: '', localTime: '' };
+        const utcDateTime = new Date(utcDateStr + 'T' + utcTimeStr + 'Z');
+        if (isNaN(utcDateTime.getTime())) return { localDate: '', localTime: '' };
+
+        const year = utcDateTime.getFullYear();
+        const month = pad(utcDateTime.getMonth() + 1);
+        const day = pad(utcDateTime.getDate());
+        const hours = pad(utcDateTime.getHours());
+        const minutes = pad(utcDateTime.getMinutes());
+        const seconds = pad(utcDateTime.getSeconds());
+
+        return {
+          localDate: year + '-' + month + '-' + day,
+          localTime: hours + ':' + minutes + ':' + seconds
+        };
+      }
+
+      function addExpiryTime(dateInputId, timeInputId, amount, unit) {
+        const dateInput = document.getElementById(dateInputId);
+        const timeInput = document.getElementById(timeInputId);
+
+        let date = new Date(dateInput.value + 'T' + (timeInput.value || '00:00:00'));
+        if (isNaN(date.getTime())) date = new Date();
+
+        if (unit === 'hour') date.setHours(date.getHours() + amount);
+        else if (unit === 'day') date.setDate(date.getDate() + amount);
+        else if (unit === 'month') date.setMonth(date.getMonth() + amount);
+
+        const year = date.getFullYear();
+        const month = pad(date.getMonth() + 1);
+        const day = pad(date.getDate());
+        const hours = pad(date.getHours());
+        const minutes = pad(date.getMinutes());
+        const seconds = pad(date.getSeconds());
+
+        dateInput.value = year + '-' + month + '-' + day;
+        timeInput.value = hours + ':' + minutes + ':' + seconds;
+      }
+
+      document.body.addEventListener('click', (e) => {
+        const target = e.target.closest('.time-quick-set-group button');
+        if (!target) return;
+        const group = target.closest('.time-quick-set-group');
+        addExpiryTime(
+          group.dataset.targetDate,
+          group.dataset.targetTime,
+          parseInt(target.dataset.amount, 10),
+          target.dataset.unit
+        );
+      });
+
+      async function copyUUID(uuid, button) {
+        try {
+          await navigator.clipboard.writeText(uuid);
+          const originalText = button.innerHTML;
+          button.innerHTML = '✓ Copied';
+          button.classList.add('copied');
+          setTimeout(() => {
+            button.innerHTML = originalText;
+            button.classList.remove('copied');
+          }, 2000);
+          showToast('UUID copied to clipboard!', false);
+        } catch (error) {
+          showToast('Failed to copy UUID', true);
+        }
+      }
+
+      async function fetchStats() {
+        try {
+          const stats = await api.get('/stats');
+          document.getElementById('total-users').textContent = stats.total_users;
+          document.getElementById('active-users').textContent = stats.active_users;
+          document.getElementById('expired-users').textContent = stats.expired_users;
+          document.getElementById('total-traffic').textContent = await formatBytes(stats.total_traffic);
+        } catch (error) {
+          showToast(error.message, true);
+        }
+      }
+
+      function renderUsers(usersToRender = allUsers) {
+        const userList = document.getElementById('userList');
+        userList.innerHTML = '';
+        
+        if (usersToRender.length === 0) {
+          userList.innerHTML = '<tr><td colspan="10" style="text-align:center;">No users found.</td></tr>';
+          return;
+        }
+
+        usersToRender.forEach(user => {
+          const expiryDate = new Date(user.expiration_date + 'T' + user.expiration_time + 'Z');
+          const isExpired = expiryDate <= new Date();
+          const localExpiry = expiryDate.toLocaleString();
+          
+          const row = document.createElement('tr');
+          row.innerHTML = \`
+            <td><input type="checkbox" class="user-checkbox" data-uuid="\${user.uuid}"></td>
+            <td>
+              <div class="uuid-cell">
+                <span title="\${user.uuid}">\${user.uuid.substring(0, 8)}...</span>
+                <button class="btn-copy-uuid" data-uuid="\${user.uuid}">📋 Copy</button>
+              </div>
+            </td>
+            <td>\${new Date(user.created_at).toLocaleString()}</td>
+            <td>\${localExpiry}</td>
+            <td><span class="status-badge \${isExpired ? 'status-expired' : 'status-active'}">\${isExpired ? 'Expired' : 'Active'}</span></td>
+            <td>\${escapeHTML(user.notes || '-')}</td>
+            <td>\${user.traffic_limit ? formatBytes(user.traffic_limit) : 'Unlimited'}</td>
+            <td>\${formatBytes(user.traffic_used || 0)}</td>
+            <td>\${user.ip_limit === -1 ? 'Unlimited' : user.ip_limit}</td>
+            <td>
+              <div style="display: flex; gap: 8px;">
+                <button class="btn btn-secondary btn-edit" data-uuid="\${user.uuid}" style="font-size: 12px; padding: 6px 10px;">Edit</button>
+                <button class="btn btn-danger btn-delete" data-uuid="\${user.uuid}" style="font-size: 12px; padding: 6px 10px;">Delete</button>
+              </div>
+            </td>
+          \`;
+          userList.appendChild(row);
+        });
+      }
+
+      async function fetchAndRenderUsers() {
+        try {
+          allUsers = await api.get('/users');
+          allUsers.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+          renderUsers();
+          await fetchStats();
+        } catch (error) {
+          showToast(error.message, true);
+        }
+      }
+
+      // سیستم Auto-Refresh از اسکریپت اول
+      function startAutoRefresh() {
+        setInterval(async () => {
+          try {
+            await fetchAndRenderUsers();
+            console.log('✓ Dashboard auto-refreshed');
+          } catch (error) {
+            console.error('Auto-refresh failed:', error);
+          }
+        }, 60000); // هر 1 دقیقه
+      }
+
+      async function handleCreateUser(e) {
+        e.preventDefault();
+        const localDate = document.getElementById('expiryDate').value;
+        const localTime = document.getElementById('expiryTime').value;
+
+        const { utcDate, utcTime } = localToUTC(localDate, localTime);
+        if (!utcDate || !utcTime) return showToast('Invalid date or time', true);
+
+        const dataLimit = document.getElementById('dataLimit').value;
+        const dataUnit = document.getElementById('dataUnit').value;
+        let trafficLimit = null;
+        
+        if (dataUnit !== 'unlimited' && dataLimit) {
+          const multipliers = { KB: 1024, MB: 1024**2, GB: 1024**3, TB: 1024**4 };
+          trafficLimit = parseFloat(dataLimit) * (multipliers[dataUnit] || 1);
+        }
+
+        const ipLimit = parseInt(document.getElementById('ipLimit').value) || -1;
+
+        const userData = {
+          uuid: document.getElementById('uuid').value,
+          exp_date: utcDate,
+          exp_time: utcTime,
+          notes: document.getElementById('notes').value,
+          traffic_limit: trafficLimit,
+          ip_limit: ipLimit
+        };
+
+        try {
+          await api.post('/users', userData);
+          showToast('✓ User created successfully!');
+          document.getElementById('createUserForm').reset();
+          document.getElementById('uuid').value = crypto.randomUUID();
+          setDefaultExpiry();
+          await fetchAndRenderUsers();
+        } catch (error) {
+          showToast(error.message, true);
+        }
+      }
+
+      async function handleDeleteUser(uuid) {
+        if (confirm('Delete user ' + uuid + '?')) {
+          try {
+            await api.delete('/users/' + uuid);
+            showToast('✓ User deleted successfully!');
+            await fetchAndRenderUsers();
+          } catch (error) {
+            showToast(error.message, true);
+          }
+        }
+      }
+
+      async function handleBulkDelete() {
+        const selected = Array.from(document.querySelectorAll('.user-checkbox:checked')).map(cb => cb.dataset.uuid);
+        if (selected.length === 0) return showToast('No users selected', true);
+        if (confirm('Delete ' + selected.length + ' selected users?')) {
+          try {
+            await api.post('/users/bulk-delete', { uuids: selected });
+            showToast('✓ Selected users deleted!');
+            await fetchAndRenderUsers();
+          } catch (error) {
+            showToast(error.message, true);
+          }
+        }
+      }
+
+      function openEditModal(uuid) {
+        const user = allUsers.find(u => u.uuid === uuid);
+        if (!user) return showToast('User not found', true);
+
+        const { localDate, localTime } = utcToLocal(user.expiration_date, user.expiration_time);
+
+        document.getElementById('editUuid').value = user.uuid;
+        document.getElementById('editExpiryDate').value = localDate;
+        document.getElementById('editExpiryTime').value = localTime;
+        document.getElementById('editNotes').value = user.notes || '';
+
+        const editDataLimit = document.getElementById('editDataLimit');
+        const editDataUnit = document.getElementById('editDataUnit');
+        if (user.traffic_limit === null || user.traffic_limit === 0) {
+          editDataUnit.value = 'unlimited';
+          editDataLimit.value = '';
+        } else {
+          let bytes = user.traffic_limit;
+          let unit = 'KB';
+          let value = bytes / 1024;
+          
+          if (value >= 1024) { value = value / 1024; unit = 'MB'; }
+          if (value >= 1024) { value = value / 1024; unit = 'GB'; }
+          if (value >= 1024) { value = value / 1024; unit = 'TB'; }
+          
+          editDataLimit.value = value.toFixed(2);
+          editDataUnit.value = unit;
+        }
+
+        document.getElementById('editIpLimit').value = user.ip_limit !== null ? user.ip_limit : -1;
+        document.getElementById('resetTraffic').checked = false;
+
+        document.getElementById('editModal').classList.add('show');
+      }
+
+      function closeEditModal() {
+        document.getElementById('editModal').classList.remove('show');
+      }
+
+      async function handleEditUser(e) {
+        e.preventDefault();
+        const localDate = document.getElementById('editExpiryDate').value;
+        const localTime = document.getElementById('editExpiryTime').value;
+
+        const { utcDate, utcTime } = localToUTC(localDate, localTime);
+        if (!utcDate || !utcTime) return showToast('Invalid date or time', true);
+
+        const dataLimit = document.getElementById('editDataLimit').value;
+        const dataUnit = document.getElementById('editDataUnit').value;
+        let trafficLimit = null;
+        
+        if (dataUnit !== 'unlimited' && dataLimit) {
+          const multipliers = { KB: 1024, MB: 1024**2, GB: 1024**3, TB: 1024**4 };
+          trafficLimit = parseFloat(dataLimit) * (multipliers[dataUnit] || 1);
+        }
+
+        const ipLimit = parseInt(document.getElementById('editIpLimit').value) || -1;
+
+        const updatedData = {
+          exp_date: utcDate,
+          exp_time: utcTime,
+          notes: document.getElementById('editNotes').value,
+          traffic_limit: trafficLimit,
+          ip_limit: ipLimit,
+          reset_traffic: document.getElementById('resetTraffic').checked
+        };
+
+        try {
+          await api.put('/users/' + document.getElementById('editUuid').value, updatedData);
+          showToast('✓ User updated successfully!');
+          closeEditModal();
+          await fetchAndRenderUsers();
+        } catch (error) {
+          showToast(error.message, true);
+        }
+      }
+
+      async function handleLogout() {
+        try {
+          await api.post('/logout', {});
+          showToast('✓ Logged out successfully!');
+          setTimeout(() => window.location.reload(), 1000);
+        } catch (error) {
+          showToast(error.message, true);
+        }
+      }
+
+      async function handleHealthCheck() {
+        try {
+          await api.post('/health-check', {});
+          showToast('✓ Health check completed!', false);
+          await fetchAndRenderUsers();
+        } catch (error) {
+          showToast(error.message, true);
+        }
+      }
+
+      function setDefaultExpiry() {
+        const now = new Date();
+        now.setDate(now.getDate() + 1);
+        
+        const year = now.getFullYear();
+        const month = pad(now.getMonth() + 1);
+        const day = pad(now.getDate());
+        const hours = pad(now.getHours());
+        const minutes = pad(now.getMinutes());
+        const seconds = pad(now.getSeconds());
+        
+        document.getElementById('expiryDate').value = year + '-' + month + '-' + day;
+        document.getElementById('expiryTime').value = hours + ':' + minutes + ':' + seconds;
+      }
+
+      function filterUsers() {
+        const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+        const filtered = allUsers.filter(user => 
+          user.uuid.toLowerCase().includes(searchTerm) || 
+          (user.notes && user.notes.toLowerCase().includes(searchTerm))
+        );
+        renderUsers(filtered);
+      }
+
+      // Event Listeners
+      document.getElementById('generateUUID').addEventListener('click', () => {
+        document.getElementById('uuid').value = crypto.randomUUID();
+      });
+      
+      document.getElementById('createUserForm').addEventListener('submit', handleCreateUser);
+      document.getElementById('editUserForm').addEventListener('submit', handleEditUser);
+      document.getElementById('modalCancelBtn').addEventListener('click', closeEditModal);
+      document.getElementById('searchInput').addEventListener('input', filterUsers);
+      
+      document.getElementById('selectAll').addEventListener('change', (e) => {
+        document.querySelectorAll('.user-checkbox').forEach(cb => cb.checked = e.target.checked);
+      });
+      
+      document.getElementById('deleteSelected').addEventListener('click', handleBulkDelete);
+      document.getElementById('logoutBtn').addEventListener('click', handleLogout);
+      document.getElementById('healthCheckBtn').addEventListener('click', handleHealthCheck);
+
+      document.getElementById('editModal').addEventListener('click', (e) => {
+        if (e.target === document.getElementById('editModal')) closeEditModal();
+      });
+
+      document.getElementById('userList').addEventListener('click', (e) => {
+        const copyBtn = e.target.closest('.btn-copy-uuid');
+        if (copyBtn) {
+          copyUUID(copyBtn.dataset.uuid, copyBtn);
+          return;
+        }
+
+        const actionBtn = e.target.closest('button');
+        if (!actionBtn) return;
+        const uuid = actionBtn.dataset.uuid;
+        if (actionBtn.classList.contains('btn-edit')) openEditModal(uuid);
+        else if (actionBtn.classList.contains('btn-delete')) handleDeleteUser(uuid);
+      });
+
+      // Initialize
+      setDefaultExpiry();
+      document.getElementById('uuid').value = crypto.randomUUID();
+      fetchAndRenderUsers();
+      startAutoRefresh();
+    });
+  </script>
+</body>
+</html>`;
+
+// ============================================================================
+// ADMIN REQUEST HANDLER - ترکیب کامل سیستم ادمین از هر دو اسکریپت
+// ============================================================================
+
+async function isAdmin(request, env) {
+  const cookieHeader = request.headers.get('Cookie');
+  if (!cookieHeader) return false;
+
+  const token = cookieHeader.match(/auth_token=([^;]+)/)?.[1];
+  if (!token) return false;
+
+  const hashedToken = await hashSHA256(token);
+  const storedHashedToken = await kvGet(env.DB, 'admin_session_token_hash');
+  return storedHashedToken && timingSafeEqual(hashedToken, storedHashedToken);
+}
+
+async function handleAdminRequest(request, env, ctx, adminPrefix) {
+  try {
+    await ensureTablesExist(env, ctx);
+    
+    const url = new URL(request.url);
+    const jsonHeader = { 'Content-Type': 'application/json' };
+    const htmlHeaders = new Headers({ 'Content-Type': 'text/html;charset=utf-8' });
+    const clientIp = request.headers.get('CF-Connecting-IP');
+
+    if (!env.ADMIN_KEY) {
+      addSecurityHeaders(htmlHeaders, null, {});
+      return new Response('Admin panel not configured', { status: 503, headers: htmlHeaders });
+    }
+
+    // IP Whitelist Check
+    if (env.ADMIN_IP_WHITELIST) {
+      const allowedIps = env.ADMIN_IP_WHITELIST.split(',').map(ip => ip.trim());
+      if (!allowedIps.includes(clientIp)) {
+        console.warn(`Admin access denied for IP: ${clientIp}`);
+        addSecurityHeaders(htmlHeaders, null, {});
+        return new Response('Access denied', { status: 403, headers: htmlHeaders });
+      }
+    } else {
+      // Scamalytics check if no whitelist
+      const scamalyticsConfig = {
+        username: env.SCAMALYTICS_USERNAME || Config.scamalytics.username,
+        apiKey: env.SCAMALYTICS_API_KEY || Config.scamalytics.apiKey,
+        baseUrl: env.SCAMALYTICS_BASEURL || Config.scamalytics.baseUrl,
+      };
+      if (await isSuspiciousIP(clientIp, scamalyticsConfig, env.SCAMALYTICS_THRESHOLD || CONST.SCAMALYTICS_THRESHOLD)) {
+        console.warn(`Admin access denied for suspicious IP: ${clientIp}`);
+        addSecurityHeaders(htmlHeaders, null, {});
+        return new Response('Access denied', { status: 403, headers: htmlHeaders });
+      }
+    }
+
+    // Custom Header Check
+    if (env.ADMIN_HEADER_KEY) {
+      const headerValue = request.headers.get('X-Admin-Auth');
+      if (!timingSafeEqual(headerValue || '', env.ADMIN_HEADER_KEY)) {
+        addSecurityHeaders(htmlHeaders, null, {});
+        return new Response('Access denied', { status: 403, headers: htmlHeaders });
+      }
+    }
+
+    const adminBasePath = `/${adminPrefix}/${env.ADMIN_KEY}`;
+
+    if (!url.pathname.startsWith(adminBasePath)) {
+      const headers = new Headers();
+      addSecurityHeaders(headers, null, {});
+      return new Response('Not found', { status: 404, headers });
+    }
+
+    const adminSubPath = url.pathname.substring(adminBasePath.length) || '/';
+
+    // API Routes
+    if (adminSubPath.startsWith('/api/')) {
+      if (!env.DB) {
+        const headers = new Headers(jsonHeader);
+        addSecurityHeaders(headers, null, {});
+        return new Response(JSON.stringify({ error: 'Database not configured' }), { status: 503, headers });
+      }
+
+      if (!(await isAdmin(request, env))) {
+        const headers = new Headers(jsonHeader);
+        addSecurityHeaders(headers, null, {});
+        return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers });
+      }
+
+      // Rate limiting for API
+      const apiRateKey = `admin_api_rate:${clientIp}`;
+      if (await checkRateLimit(env.DB, apiRateKey, 100, 60)) {
+        const headers = new Headers(jsonHeader);
+        addSecurityHeaders(headers, null, {});
+        return new Response(JSON.stringify({ error: 'API rate limit exceeded' }), { status: 429, headers });
+      }
+
+      // CSRF Protection for non-GET requests
+      if (request.method !== 'GET') {
+        const origin = request.headers.get('Origin');
+        const secFetch = request.headers.get('Sec-Fetch-Site');
+
+        if (!origin || new URL(origin).hostname !== url.hostname || secFetch !== 'same-origin') {
+          const headers = new Headers(jsonHeader);
+          addSecurityHeaders(headers, null, {});
+          return new Response(JSON.stringify({ error: 'Invalid request origin' }), { status: 403, headers });
+        }
+
+        const csrfToken = request.headers.get('X-CSRF-Token');
+        const cookieCsrf = request.headers.get('Cookie')?.match(/csrf_token=([^;]+)/)?.[1];
+        if (!csrfToken || !cookieCsrf || !timingSafeEqual(csrfToken, cookieCsrf)) {
+          const headers = new Headers(jsonHeader);
+          addSecurityHeaders(headers, null, {});
+          return new Response(JSON.stringify({ error: 'CSRF validation failed' }), { status: 403, headers });
+        }
+      }
+
+      // API: Get Stats
+      if (adminSubPath === '/api/stats' && request.method === 'GET') {
+        const headers = new Headers(jsonHeader);
+        addSecurityHeaders(headers, null, {});
+        try {
+          const totalUsers = await env.DB.prepare("SELECT COUNT(*) as count FROM users").first('count');
+          const expiredQuery = await env.DB.prepare(
+            "SELECT COUNT(*) as count FROM users WHERE datetime(expiration_date || 'T' || expiration_time || 'Z') < datetime('now')"
+          ).first();
+          const expiredUsers = expiredQuery?.count || 0;
+          const activeUsers = totalUsers - expiredUsers;
+          const totalTrafficQuery = await env.DB.prepare("SELECT SUM(traffic_used) as sum FROM users").first();
+          const totalTraffic = totalTrafficQuery?.sum || 0;
+          
+          return new Response(JSON.stringify({ 
+            total_users: totalUsers, 
+            active_users: activeUsers, 
+            expired_users: expiredUsers, 
+            total_traffic: totalTraffic 
+          }), { status: 200, headers });
+        } catch (e) {
+          return new Response(JSON.stringify({ error: e.message }), { status: 500, headers });
+        }
+      }
+
+      // API: Get Users List
+      if (adminSubPath === '/api/users' && request.method === 'GET') {
+        const headers = new Headers(jsonHeader);
+        addSecurityHeaders(headers, null, {});
+        try {
+          const { results } = await env.DB.prepare(
+            "SELECT uuid, created_at, expiration_date, expiration_time, notes, traffic_limit, traffic_used, ip_limit FROM users ORDER BY created_at DESC"
+          ).all();
+          return new Response(JSON.stringify(results ?? []), { status: 200, headers });
+        } catch (e) {
+          return new Response(JSON.stringify({ error: e.message }), { status: 500, headers });
+        }
+      }
+
+      // API: Create User
+      if (adminSubPath === '/api/users' && request.method === 'POST') {
+        const headers = new Headers(jsonHeader);
+        addSecurityHeaders(headers, null, {});
+        try {
+          const { uuid, exp_date: expDate, exp_time: expTime, notes, traffic_limit, ip_limit } = await request.json();
+
+          if (!uuid || !expDate || !expTime || !/^\d{4}-\d{2}-\d{2}$/.test(expDate) || !/^\d{2}:\d{2}:\d{2}$/.test(expTime)) {
+            throw new Error('Invalid or missing fields');
           }
 
-          if (remoteSocketWapper.value) {
-            const writer = remoteSocketWapper.value.writable.getWriter();
-            await writer.write(chunk);
-            writer.releaseLock();
-            return;
+          await env.DB.prepare(
+            "INSERT INTO users (uuid, expiration_date, expiration_time, notes, traffic_limit, ip_limit, traffic_used) VALUES (?, ?, ?, ?, ?, ?, 0)"
+          ).bind(uuid, expDate, expTime, notes || null, traffic_limit, ip_limit || -1).run();
+          
+          ctx.waitUntil(kvPut(env.DB, `user:${uuid}`, { 
+            uuid,
+            expiration_date: expDate, 
+            expiration_time: expTime, 
+            notes: notes || null,
+            traffic_limit: traffic_limit, 
+            ip_limit: ip_limit || -1,
+            traffic_used: 0 
+          }, { expirationTtl: 3600 }));
+
+          return new Response(JSON.stringify({ success: true, uuid }), { status: 201, headers });
+        } catch (error) {
+          if (error.message?.includes('UNIQUE constraint failed')) {
+            return new Response(JSON.stringify({ error: 'UUID already exists' }), { status: 409, headers });
+          }
+          return new Response(JSON.stringify({ error: error.message }), { status: 400, headers });
+        }
+      }
+
+      // API: Bulk Delete
+      if (adminSubPath === '/api/users/bulk-delete' && request.method === 'POST') {
+        const headers = new Headers(jsonHeader);
+        addSecurityHeaders(headers, null, {});
+        try {
+          const { uuids } = await request.json();
+          if (!Array.isArray(uuids) || uuids.length === 0) {
+            throw new Error('Invalid request: Expected array of UUIDs');
           }
 
-          const {
-            hasError,
-            message,
-            addressType,
-            portRemote = 443,
-            addressRemote = '',
-            rawDataIndex,
-            ProtocolVersion = new Uint8Array([0, 0]),
-            isUDP,
-          } = ProcessProtocolHeader(chunk, config.userID);
+          const deleteUserStmt = env.DB.prepare("DELETE FROM users WHERE uuid = ?");
+          const stmts = uuids.map(uuid => deleteUserStmt.bind(uuid));
+          await env.DB.batch(stmts);
 
-          address = addressRemote;
-          portWithRandomLog = `${portRemote}--${Math.random()} ${isUDP ? 'udp' : 'tcp'} `;
+          ctx.waitUntil(Promise.all(uuids.map(uuid => kvDelete(env.DB, `user:${uuid}`))));
 
-          if (hasError) {
-            throw new Error(message);
+          return new Response(JSON.stringify({ success: true, count: uuids.length }), { status: 200, headers });
+        } catch (error) {
+          return new Response(JSON.stringify({ error: error.message }), { status: 400, headers });
+        }
+      }
+
+      // API: Update User
+      const userRouteMatch = adminSubPath.match(/^\/api\/users\/([a-f0-9-]+)$/);
+      if (userRouteMatch && request.method === 'PUT') {
+        const headers = new Headers(jsonHeader);
+        addSecurityHeaders(headers, null, {});
+        const uuid = userRouteMatch[1];
+        try {
+          const { exp_date: expDate, exp_time: expTime, notes, traffic_limit, ip_limit, reset_traffic } = await request.json();
+          
+          if (!expDate || !expTime || !/^\d{4}-\d{2}-\d{2}$/.test(expDate) || !/^\d{2}:\d{2}:\d{2}$/.test(expTime)) {
+            throw new Error('Invalid date/time format');
           }
 
-          const vlessResponseHeader = new Uint8Array([ProtocolVersion[0], 0]);
-          const rawClientData = chunk.slice(rawDataIndex);
+          let query = "UPDATE users SET expiration_date = ?, expiration_time = ?, notes = ?, traffic_limit = ?, ip_limit = ?";
+          let binds = [expDate, expTime,          let query = "UPDATE users SET expiration_date = ?, expiration_time = ?, notes = ?, traffic_limit = ?, ip_limit = ?";
+          let binds = [expDate, expTime, notes || null, traffic_limit, ip_limit || -1];
+          
+          if (reset_traffic) {
+            query += ", traffic_used = 0";
+          }
+          
+          query += " WHERE uuid = ?";
+          binds.push(uuid);
 
-          if (isUDP) {
-            if (portRemote === 53) {
-              const dnsPipeline = await createDnsPipeline(webSocket, vlessResponseHeader, log);
-              udpStreamWriter = dnsPipeline.write;
-              udpStreamWriter(rawClientData);
-            } else {
-              throw new Error('UDP proxy is only enabled for DNS (port 53)');
+          await env.DB.prepare(query).bind(...binds).run();
+          ctx.waitUntil(kvDelete(env.DB, `user:${uuid}`));
+
+          return new Response(JSON.stringify({ success: true, uuid }), { status: 200, headers });
+        } catch (error) {
+          return new Response(JSON.stringify({ error: error.message }), { status: 400, headers });
+        }
+      }
+
+      // API: Delete User
+      if (userRouteMatch && request.method === 'DELETE') {
+        const headers = new Headers(jsonHeader);
+        addSecurityHeaders(headers, null, {});
+        const uuid = userRouteMatch[1];
+        try {
+          await env.DB.prepare("DELETE FROM users WHERE uuid = ?").bind(uuid).run();
+          ctx.waitUntil(kvDelete(env.DB, `user:${uuid}`));
+          return new Response(JSON.stringify({ success: true, uuid }), { status: 200, headers });
+        } catch (error) {
+          return new Response(JSON.stringify({ error: error.message }), { status: 500, headers });
+        }
+      }
+
+      // API: Logout
+      if (adminSubPath === '/api/logout' && request.method === 'POST') {
+        const headers = new Headers(jsonHeader);
+        addSecurityHeaders(headers, null, {});
+        try {
+          await kvDelete(env.DB, 'admin_session_token_hash');
+          const setCookie = [
+            'auth_token=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Strict',
+            'csrf_token=; Max-Age=0; Path=/; Secure; SameSite=Strict'
+          ];
+          headers.append('Set-Cookie', setCookie[0]);
+          headers.append('Set-Cookie', setCookie[1]);
+          return new Response(JSON.stringify({ success: true }), { status: 200, headers });
+        } catch (error) {
+          return new Response(JSON.stringify({ error: error.message }), { status: 500, headers });
+        }
+      }
+
+      // API: Health Check
+      if (adminSubPath === '/api/health-check' && request.method === 'POST') {
+        const headers = new Headers(jsonHeader);
+        addSecurityHeaders(headers, null, {});
+        try {
+          await performHealthCheck(env, ctx);
+          return new Response(JSON.stringify({ success: true }), { status: 200, headers });
+        } catch (error) {
+          return new Response(JSON.stringify({ error: error.message }), { status: 500, headers });
+        }
+      }
+
+      const headers = new Headers(jsonHeader);
+      addSecurityHeaders(headers, null, {});
+      return new Response(JSON.stringify({ error: 'API route not found' }), { status: 404, headers });
+    }
+
+    // Login Page
+    if (adminSubPath === '/') {
+      if (request.method === 'POST') {
+        const rateLimitKey = `login_fail_ip:${clientIp}`;
+        
+        try {
+          const failCountStr = await kvGet(env.DB, rateLimitKey);
+          const failCount = parseInt(failCountStr, 10) || 0;
+          
+          if (failCount >= CONST.ADMIN_LOGIN_FAIL_LIMIT) {
+            addSecurityHeaders(htmlHeaders, null, {});
+            return new Response('Too many failed attempts. Try again later.', { status: 429, headers: htmlHeaders });
+          }
+          
+          const formData = await request.formData();
+          
+          if (timingSafeEqual(formData.get('password'), env.ADMIN_KEY)) {
+            // TOTP validation if enabled
+            if (env.ADMIN_TOTP_SECRET) {
+              const totpCode = formData.get('totp');
+              if (!(await validateTOTP(env.ADMIN_TOTP_SECRET, totpCode))) {
+                const nonce = generateNonce();
+                addSecurityHeaders(htmlHeaders, nonce, {});
+                let html = adminLoginHTML.replace('</form>', `</form><p class="error">Invalid TOTP code. Attempt ${failCount + 1}/${CONST.ADMIN_LOGIN_FAIL_LIMIT}</p>`);
+                html = html.replace(/CSP_NONCE_PLACEHOLDER/g, nonce);
+                html = html.replace('action="ADMIN_PATH_PLACEHOLDER"', `action="${adminBasePath}"`);
+                
+                ctx.waitUntil(kvPut(env.DB, rateLimitKey, (failCount + 1).toString(), { expirationTtl: CONST.ADMIN_LOGIN_LOCK_TTL }));
+                
+                return new Response(html, { status: 401, headers: htmlHeaders });
+              }
             }
-            return;
+            
+            const token = crypto.randomUUID();
+            const csrfToken = crypto.randomUUID();
+            const hashedToken = await hashSHA256(token);
+            
+            ctx.waitUntil(Promise.all([
+              kvPut(env.DB, 'admin_session_token_hash', hashedToken, { expirationTtl: 86400 }),
+              kvDelete(env.DB, rateLimitKey)
+            ]));
+            
+            const headers = new Headers({ 'Location': adminBasePath });
+            headers.append('Set-Cookie', `auth_token=${token}; HttpOnly; Secure; Path=${adminBasePath}; Max-Age=86400; SameSite=Strict`);
+            headers.append('Set-Cookie', `csrf_token=${csrfToken}; Secure; Path=${adminBasePath}; Max-Age=86400; SameSite=Strict`);
+            addSecurityHeaders(headers, null, {});
+            
+            return new Response(null, { status: 302, headers });
+          } else {
+            ctx.waitUntil(kvPut(env.DB, rateLimitKey, (failCount + 1).toString(), { expirationTtl: CONST.ADMIN_LOGIN_LOCK_TTL }));
+            
+            const nonce = generateNonce();
+            addSecurityHeaders(htmlHeaders, nonce, {});
+            let html = adminLoginHTML.replace('</form>', `</form><p class="error">Invalid password. Attempt ${failCount + 1}/${CONST.ADMIN_LOGIN_FAIL_LIMIT}</p>`);
+            html = html.replace(/CSP_NONCE_PLACEHOLDER/g, nonce);
+            html = html.replace('action="ADMIN_PATH_PLACEHOLDER"', `action="${adminBasePath}"`);
+            return new Response(html, { status: 401, headers: htmlHeaders });
           }
+        } catch (e) {
+          console.error("Admin login error:", e);
+          addSecurityHeaders(htmlHeaders, null, {});
+          return new Response('Internal error during login', { status: 500, headers: htmlHeaders });
+        }
+      }
 
-          HandleTCPOutBound(
-            remoteSocketWapper,
-            addressType,
-            addressRemoteSocket,
-            addressType,
-            addressRemote,
-            portRemote,
-            rawClientData,
-            webSocket,
-            vlessResponseHeader,
-            log,
-            config,
-          );
-        },
-        close() {
-          log(`readableWebSocketStream closed`);
-        },
-        abort(err) {
-          log(`readableWebSocketStream aborted`, err);
-        },
-      }),
-    )
-    .catch((err) => {
-      console.error('Pipeline failed:', err.stack || err);
+      if (request.method === 'GET') {
+        const nonce = generateNonce();
+        addSecurityHeaders(htmlHeaders, nonce, {});
+        
+        let html;
+        if (await isAdmin(request, env)) {
+          html = adminPanelHTML;
+          html = html.replace("'ADMIN_API_BASE_PATH_PLACEHOLDER'", `'${adminBasePath}/api'`);
+        } else {
+          html = adminLoginHTML;
+          html = html.replace('action="ADMIN_PATH_PLACEHOLDER"', `action="${adminBasePath}"`);
+        }
+        
+        html = html.replace(/CSP_NONCE_PLACEHOLDER/g, nonce);
+        return new Response(html, { headers: htmlHeaders });
+      }
+
+      const headers = new Headers();
+      addSecurityHeaders(headers, null, {});
+      return new Response('Method Not Allowed', { status: 405, headers });
+    }
+
+    const headers = new Headers();
+    addSecurityHeaders(headers, null, {});
+    return new Response('Not found', { status: 404, headers });
+  } catch (e) {
+    console.error('handleAdminRequest error:', e.message, e.stack);
+    const headers = new Headers();
+    addSecurityHeaders(headers, null, {});
+    return new Response('Internal Server Error', { status: 500, headers });
+  }
+}
+
+// ============================================================================
+// USER PANEL WITH SELF-CONTAINED QR CODE GENERATOR
+// این بخش شامل تمام قابلیت‌های پیشرفته از هر دو اسکریپت است
+// ============================================================================
+
+async function resolveProxyIP(proxyHost) {
+  const ipv4Regex = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+  const ipv6Regex = /^\[?[0-9a-fA-F:]+\]?$/;
+
+  if (ipv4Regex.test(proxyHost) || ipv6Regex.test(proxyHost)) {
+    return proxyHost;
+  }
+
+  // Multiple DNS-over-HTTPS providers for resolution
+  const dnsAPIs = [
+    { url: `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(proxyHost)}&type=A`, parse: data => data.Answer?.find(a => a.type === 1)?.data },
+    { url: `https://dns.google/resolve?name=${encodeURIComponent(proxyHost)}&type=A`, parse: data => data.Answer?.find(a => a.type === 1)?.data },
+    { url: `https://1.1.1.1/dns-query?name=${encodeURIComponent(proxyHost)}&type=A`, parse: data => data.Answer?.find(a => a.type === 1)?.data }
+  ];
+
+  for (const api of dnsAPIs) {
+    try {
+      const response = await fetch(api.url, { headers: { 'accept': 'application/dns-json' } });
+      if (response.ok) {
+        const data = await response.json();
+        const ip = api.parse(data);
+        if (ip && ipv4Regex.test(ip)) return ip;
+      }
+    } catch (e) {
+      // Silent fail and try next provider
+    }
+  }
+  return proxyHost;
+}
+
+async function getGeo(ip) {
+  // Multiple geolocation providers for robustness
+  const geoAPIs = [
+    {
+      url: `https://ipapi.co/${ip}/json/`,
+      parse: async (r) => {
+        const data = await r.json();
+        if (data.error) throw new Error(data.reason || 'API Error');
+        return { city: data.city || '', country: data.country_name || '', isp: data.org || '' };
+      }
+    },
+    {
+      url: `https://ip-api.com/json/${ip}?fields=status,message,city,country,isp`,
+      parse: async (r) => {
+        const data = await r.json();
+        if (data.status === 'fail') throw new Error(data.message || 'API Error');
+        return { city: data.city || '', country: data.country || '', isp: data.isp || '' };
+      }
+    },
+    {
+      url: `https://ipwho.is/${ip}`,
+      parse: async (r) => {
+        const data = await r.json();
+        if (!data.success) throw new Error('API Error');
+        return { city: data.city || '', country: data.country || '', isp: data.connection?.isp || '' };
+      }
+    }
+  ];
+
+  for (const api of geoAPIs) {
+    try {
+      const response = await fetch(api.url);
+      if (response.ok) {
+        const geo = await api.parse(response);
+        if (geo && (geo.city || geo.country)) return geo;
+      }
+    } catch (e) {
+      // Try next provider
+    }
+  }
+  return null;
+}
+
+async function handleUserPanel(request, userID, hostName, proxyAddress, userData, clientIp) {
+  try {
+    const subXrayUrl = `https://${hostName}/xray/${userID}`;
+    const subSbUrl = `https://${hostName}/sb/${userID}`;
+    
+    const singleXrayConfig = buildLink({ 
+      core: 'xray', 
+      proto: 'tls', 
+      userID, 
+      hostName, 
+      address: hostName, 
+      port: 443, 
+      tag: 'Main' 
+    });
+  
+    const singleSingboxConfig = buildLink({ 
+      core: 'sb', 
+      proto: 'tls', 
+      userID, 
+      hostName, 
+      address: hostName, 
+      port: 443, 
+      tag: 'Main' 
     });
 
-  return new Response(null, { status: 101, webSocket: client });
+    const clientUrls = {
+      universalAndroid: `v2rayng://install-config?url=${encodeURIComponent(subXrayUrl)}`,
+      shadowrocket: `shadowrocket://add/sub?url=${encodeURIComponent(subXrayUrl)}&name=${encodeURIComponent(hostName)}`,
+      streisand: `streisand://install-config?url=${encodeURIComponent(subXrayUrl)}`,
+      karing: `karing://install-config?url=${encodeURIComponent(subXrayUrl)}`,
+      clashMeta: `clash://install-config?url=${encodeURIComponent(subSbUrl)}`,
+      exclave: `sn://subscription?url=${encodeURIComponent(subSbUrl)}&name=${encodeURIComponent(hostName)}`,
+    };
+
+    const isUserExpired = isExpired(userData.expiration_date, userData.expiration_time);
+    const expirationDateTime = userData.expiration_date && userData.expiration_time 
+      ? `${userData.expiration_date}T${userData.expiration_time}Z` 
+      : null;
+
+    let usagePercentage = 0;
+    if (userData.traffic_limit && userData.traffic_limit > 0) {
+      usagePercentage = Math.min(((userData.traffic_used || 0) / userData.traffic_limit) * 100, 100);
+    }
+
+    // Server-side geo detection using Cloudflare CF headers
+    const requestCf = request.cf || {};
+    const clientGeo = {
+      city: requestCf.city || '',
+      country: requestCf.country || '',
+      isp: requestCf.asOrganization || ''
+    };
+
+    const proxyHost = proxyAddress.split(':')[0];
+    const proxyIP = await resolveProxyIP(proxyHost);
+    const proxyGeo = await getGeo(proxyIP) || { city: '', country: '', isp: '' };
+
+    const usageDisplay = await formatBytes(userData.traffic_used || 0);
+    let trafficLimitStr = 'Unlimited';
+    if (userData.traffic_limit && userData.traffic_limit > 0) {
+      trafficLimitStr = await formatBytes(userData.traffic_limit);
+    }
+
+    // این HTML شامل QR Code Generator خودکار از اسکریپت دوم است
+    const userPanelHTML = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>User Panel — VLESS Configuration</title>
+  <style nonce="CSP_NONCE_PLACEHOLDER">
+    :root{
+      --bg:#0b1220; --card:#0f1724; --muted:#9aa4b2; --accent:#3b82f6;
+      --accent-2:#60a5fa; --success:#22c55e; --danger:#ef4444; --warning:#f59e0b;
+      --glass: rgba(255,255,255,0.03); --radius:12px; --mono: "SF Mono", "Fira Code", monospace;
+    }
+    * { box-sizing:border-box; margin: 0; padding: 0; }
+    body{
+      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      background: linear-gradient(180deg,#061021 0%, #071323 100%);
+      color:#e6eef8; -webkit-font-smoothing:antialiased;
+      min-height:100vh; padding:28px;
+    }
+    .container{max-width:1100px;margin:0 auto}
+    .card{background:var(--card); border-radius:var(--radius); padding:20px;
+      border:1px solid rgba(255,255,255,0.03); box-shadow:0 8px 30px rgba(2,6,23,0.5); margin-bottom:20px;
+      transition: all 0.3s ease;
+    }
+    .card:hover { box-shadow:0 12px 40px rgba(2,6,23,0.7); transform: translateY(-2px); }
+    h1,h2{margin:0 0 14px;font-weight:600}
+    h1{font-size:28px; background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;}
+    h2{font-size:20px}
+    p.lead{color:var(--muted);margin:6px 0 20px;font-size:15px}
+
+    .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:10px}
+    .stat{padding:14px;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);
+      border-radius:10px;text-align:center;border:1px solid rgba(255,255,255,0.02);
+      transition: all 0.3s ease;
+    }
+    .stat:hover { transform: translateY(-3px); box-shadow: 0 6px 20px rgba(59, 130, 246, 0.2); }
+    .stat .val{font-weight:700;font-size:22px;margin-bottom:4px}
+    .stat .lbl{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:0.5px}
+    .stat.status-active .val{color:var(--success)}
+    .stat.status-expired .val{color:var(--danger)}
+    .stat.status-warning .val{color:var(--warning)}
+
+    .grid{display:grid;grid-template-columns:1fr 360px;gap:18px}
+    @media (max-width:980px){ .grid{grid-template-columns:1fr} }
+
+    .info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-top:16px}
+    .info-item{background:var(--glass);padding:14px;border-radius:10px;border:1px solid rgba(255,255,255,0.02)}
+    .info-item .label{font-size:11px;color:var(--muted);display:block;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px}
+    .info-item .value{font-weight:600;word-break:break-all;font-size:14px}
+
+    .progress-bar{height:12px;background:#071529;border-radius:6px;overflow:hidden;margin:12px 0}
+    .progress-fill{
+      height:100%;
+      transition:width 0.6s ease;
+      border-radius:6px;
+      width:0%;
+    }
+    .progress-fill.low{background:linear-gradient(90deg,#22c55e,#16a34a)}
+    .progress-fill.medium{background:linear-gradient(90deg,#f59e0b,#d97706)}
+    .progress-fill.high{background:linear-gradient(90deg,#ef4444,#dc2626)}
+
+    pre.config{background:#071529;padding:14px;border-radius:8px;overflow:auto;
+      font-family:var(--mono);font-size:13px;color:#cfe8ff;
+      border:1px solid rgba(255,255,255,0.02);max-height:200px}
+    .buttons{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+
+    .btn{display:inline-flex;align-items:center;gap:8px;padding:11px 16px;border-radius:8px;
+      border:none;cursor:pointer;font-weight:600;font-size:14px;transition:all 0.2s;
+      text-decoration:none;color:inherit}
+    .btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#fff;box-shadow:0 4px 12px rgba(59,130,246,0.3)}
+    .btn.primary:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(59,130,246,0.4)}
+    .btn.ghost{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);color:var(--muted)}
+    .btn.ghost:hover{background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.12);color:#fff}
+    .btn.small{padding:8px 12px;font-size:13px}
+    .btn:active{transform:translateY(0) scale(0.98)}
+    .btn:disabled{opacity:0.5;cursor:not-allowed}
+
+    .qr-container{background:#fff;padding:16px;border-radius:10px;display:inline-block;box-shadow:0 4px 12px rgba(0,0,0,0.2);margin:16px auto;text-align:center}
+    #qr-display{min-height:280px;display:flex;align-items:center;justify-content:center;flex-direction:column}
+
+    #toast{position:fixed;right:20px;top:20px;background:#0f1b2a;padding:14px 18px;
+      border-radius:10px;border:1px solid rgba(255,255,255,0.08);display:none;
+      color:#cfe8ff;box-shadow:0 8px 24px rgba(2,6,23,0.7);z-index:1000;min-width:200px}
+    #toast.show{display:block;animation:toastIn .3s ease}
+    #toast.success{border-left:4px solid var(--success)}
+    #toast.error{border-left:4px solid var(--danger)}
+    @keyframes toastIn{from{transform:translateY(-10px);opacity:0}to{transform:translateY(0);opacity:1}}
+
+    .section-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;
+      padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.05)}
+    .muted{color:var(--muted);font-size:14px;line-height:1.6}
+    .stack{display:flex;flex-direction:column;gap:10px}
+    .hidden{display:none}
+    .text-center{text-align:center}
+    .mb-2{margin-bottom:12px}
+    
+    .expiry-warning{background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);
+      padding:12px;border-radius:8px;margin-top:12px;color:#fca5a5}
+    .expiry-info{background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.3);
+      padding:12px;border-radius:8px;margin-top:12px;color:#86efac}
+
+    @media (max-width: 768px) {
+      body{padding:16px}
+      .container{padding:0}
+      h1{font-size:24px}
+      .stats{grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+      .info-grid{grid-template-columns:1fr}
+      .btn{padding:9px 12px;font-size:13px}
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🚀 VXR.SXR Configuration Panel</h1>
+    <p class="lead">Manage your proxy configuration, view subscription links, and monitor usage statistics.</p>
+
+    <div class="stats">
+      <div class="stat ${isUserExpired ? 'status-expired' : 'status-active'}">
+        <div class="val" id="status-badge">${isUserExpired ? 'Expired' : 'Active'}</div>
+        <div class="lbl">Account Status</div>
+      </div>
+      <div class="stat">
+        <div class="val" id="usage-display">${usageDisplay}</div>
+        <div class="lbl">Data Used</div>
+      </div>
+      <div class="stat ${usagePercentage > 80 ? 'status-warning' : ''}">
+        <div class="val">${trafficLimitStr}</div>
+        <div class="lbl">Data Limit</div>
+      </div>
+      <div class="stat">
+        <div class="val" id="expiry-countdown">—</div>
+        <div class="lbl">Time Remaining</div>
+      </div>
+    </div>
+
+    ${userData.traffic_limit && userData.traffic_limit > 0 ? `
+    <div class="card">
+      <div class="section-title">
+        <h2>📊 Usage Statistics</h2>
+        <span class="muted">${usagePercentage.toFixed(2)}% Used</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill ${usagePercentage > 80 ? 'high' : usagePercentage > 50 ? 'medium' : 'low'}" 
+             id="progress-bar-fill"
+             data-target-width="${usagePercentage.toFixed(2)}"></div>
+      </div>
+      <p class="muted text-center mb-2">${usageDisplay} of ${trafficLimitStr} used</p>
+    </div>
+    ` : ''}
+
+    ${expirationDateTime ? `
+    <div class="card">
+      <div class="section-title">
+        <h2>⏰ Expiration Information</h2>
+      </div>
+      <div id="expiration-display" data-expiry="${expirationDateTime}">
+        <p class="muted" id="expiry-local">Loading...</p>
+        <p class="muted" style="font-size:13px;margin-top:4px;" id="expiry-utc"></p>
+      </div>
+      ${isUserExpired ? `
+      <div class="expiry-warning">
+        ⚠️ Your account has expired. Please contact admin to renew.
+      </div>
+      ` : `
+      <div class="expiry-info">
+        ✓ Your account is active and working normally.
+      </div>
+      `}
+    </div>
+    ` : ''}
+
+    <div class="grid">
+      <div>
+        <div class="card">
+          <div class="section-title">
+            <h2>🌐 Network Information</h2>
+            <button class="btn ghost small" onclick="location.reload()">🔄 Refresh</button>
+          </div>
+          <p class="muted">Connection details and IP information.</p>
+          <div class="info-grid">
+            <div class="info-item">
+              <span class="label">Proxy Host</span>
+              <span class="value">${proxyAddress || hostName}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Proxy IP</span>
+              <span class="value">${proxyIP}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Proxy Location</span>
+              <span class="value">${[proxyGeo.city, proxyGeo.country].filter(Boolean).join(', ') || 'Unknown'}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Your IP</span>
+              <span class="value">${clientIp}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Your Location</span>
+              <span class="value">${[clientGeo.city, clientGeo.country].filter(Boolean).join(', ') || 'Unknown'}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Your ISP</span>
+              <span class="value">${clientGeo.isp || 'Unknown'}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="section-title">
+            <h2>📱 Subscription Links</h2>
+          </div>
+          <p class="muted">Copy subscription URLs or import directly.</p>
+
+          <div class="stack">
+            <div>
+              <h3 style="font-size:16px;margin:12px 0 8px;color:var(--accent-2);">Xray / V2Ray Subscription</h3>
+              <div class="buttons">
+                <button class="btn primary" onclick="copyToClipboard('${subXrayUrl}', this)">📋 Copy Xray Link</button>
+                <button class="btn ghost" onclick="document.getElementById('xray-config').classList.toggle('hidden')">View Config</button>
+                <button class="btn ghost" onclick="generateQRCode('${subXrayUrl}')">QR Code</button>
+              </div>
+              <pre class="config hidden" id="xray-config">${escapeHTML(singleXrayConfig)}</pre>
+            </div>
+
+            <div>
+              <h3 style="font-size:16px;margin:12px 0 8px;color:var(--accent-2);">Sing-Box / Clash Subscription</h3>
+              <div class="buttons">
+                <button class="btn primary" onclick="copyToClipboard('${subSbUrl}', this)">📋 Copy Singbox Link</button>
+                <button class="btn ghost" onclick="document.getElementById('sb-config').classList.toggle('hidden')">View Config</button>
+                <button class="btn ghost" onclick="generateQRCode('${subSbUrl}')">QR Code</button>
+              </div>
+              <pre class="config hidden" id="sb-config">${escapeHTML(singleSingboxConfig)}</pre>
+            </div>
+
+            <div>
+              <h3 style="font-size:16px;margin:12px 0 8px;color:var(--accent-2);">Quick Import</h3>
+              <div class="buttons">
+                <a href="${clientUrls.universalAndroid}" class="btn ghost">📱 Android (V2rayNG)</a>
+                <a href="${clientUrls.shadowrocket}" class="btn ghost">🍎 iOS (Shadowrocket)</a>
+                <a href="${clientUrls.streisand}" class="btn ghost">🍎 iOS Streisand</a>
+                <a href="${clientUrls.karing}" class="btn ghost">🔧 Karing</a>
+                <a href="${clientUrls.clashMeta}" class="btn ghost">🌐 Clash Meta</a>
+                <a href="${clientUrls.exclave}" class="btn ghost">📦 Exclave</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <aside>
+        <div class="card">
+          <h2>📱 QR Code Scanner</h2>
+          <p class="muted mb-2">Scan with your mobile device to quickly import.</p>
+          <div id="qr-display" class="text-center">
+            <p class="muted">Click any "QR Code" button to generate a scannable code.</p>
+          </div>
+          <div class="buttons" style="justify-content:center;margin-top:16px;">
+            <button class="btn ghost small" onclick="generateQRCode('${escapeHTML(singleXrayConfig)}')">Xray QR</button>
+            <button class="btn ghost small" onclick="generateQRCode('${escapeHTML(singleSingboxConfig)}')">Singbox QR</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>👤 Account Details</h2>
+          <div class="info-item" style="margin-top:12px;">
+            <span class="label">User UUID</span>
+            <span class="value" style="font-family:var(--mono);font-size:12px;word-break:break-all;">${userID}</span>
+          </div>
+          <div class="info-item" style="margin-top:12px;">
+            <span class="label">Created Date</span>
+            <span class="value">${new Date(userData.created_at).toLocaleDateString()}</span>
+          </div>
+          ${userData.notes ? `
+          <div class="info-item" style="margin-top:12px;">
+            <span class="label">Notes</span>
+            <span class="value">${escapeHTML(userData.notes)}</span>
+          </div>
+          ` : ''}
+          <div class="info-item" style="margin-top:12px;">
+            <span class="label">IP Limit</span>
+            <span class="value">${userData.ip_limit === -1 ? 'Unlimited' : userData.ip_limit}</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>💾 Export Configuration</h2>
+          <p class="muted mb-2">Download configuration for manual import or backup.</p>
+          <div class="buttons">
+            <button class="btn primary small" onclick="downloadConfig('${escapeHTML(singleXrayConfig)}', 'xray-config.txt')">Download Xray</button>
+            <button class="btn primary small" onclick="downloadConfig('${escapeHTML(singleSingboxConfig)}', 'singbox-config.txt')">Download Singbox</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <div class="card">
+      <p class="muted text-center" style="margin:0;">
+        🔒 This is your personal configuration panel. Keep your subscription links private and secure.
+        <br>For support, contact your service administrator.
+      </p>
+    </div>
+
+    <div id="toast"></div>
+  </div>
+
+  <script nonce="CSP_NONCE_PLACEHOLDER">
+    // ========================================================================
+    // CONFIGURATION & UTILITIES
+    // ========================================================================
+    window.CONFIG = {
+      uuid: "${userID}",
+      host: "${hostName}",
+      proxyAddress: "${proxyAddress || hostName}",
+      subXrayUrl: "${subXrayUrl}",
+      subSbUrl: "${subSbUrl}",
+      singleXrayConfig: ${JSON.stringify(singleXrayConfig)},
+      singleSingboxConfig: ${JSON.stringify(singleSingboxConfig)},
+      expirationDateTime: ${expirationDateTime ? `"${expirationDateTime}"` : 'null'},
+      isExpired: ${isUserExpired},
+      trafficLimit: ${userData.traffic_limit || 'null'},
+      initialTrafficUsed: ${userData.traffic_used || 0}
+    };
+
+    async function formatBytes(bytes) {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function showToast(message, isError = false) {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.className = isError ? 'error show' : 'success show';
+      setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    // ========================================================================
+    // SELF-CONTAINED QR CODE GENERATOR (از اسکریپت دوم)
+    // Pure JavaScript - No external dependencies - 100% compatible
+    // ========================================================================
+    const QRCodeGenerator = (function() {
+      const QRErrorCorrectLevel = { L: 1, M: 0, Q: 3, H: 2 };
+      
+      function QRMath() {}
+      
+      QRMath.glog = function(n) {
+        if (n < 1) throw new Error("glog(" + n + ")");
+        return QRMath.LOG_TABLE[n];
+      };
+      
+      QRMath.gexp = function(n) {
+        while (n < 0) n += 255;
+        while (n >= 256) n -= 255;
+        return QRMath.EXP_TABLE[n];
+      };
+      
+      QRMath.EXP_TABLE = new Array(256);
+      QRMath.LOG_TABLE = new Array(256);
+      
+      for (let i = 0; i < 8; i++) {
+        QRMath.EXP_TABLE[i] = 1 << i;
+      }
+      for (let i = 8; i < 256; i++) {
+        QRMath.EXP_TABLE[i] = QRMath.EXP_TABLE[i - 4] ^
+                              QRMath.EXP_TABLE[i - 5] ^
+                              QRMath.EXP_TABLE[i - 6] ^
+                              QRMath.EXP_TABLE[i - 8];
+      }
+      for (let i = 0; i < 255; i++) {
+        QRMath.LOG_TABLE[QRMath.EXP_TABLE[i]] = i;
+      }
+      
+      function QRPolynomial(num, shift) {
+        if (num.length === undefined) throw new Error("Invalid input");
+        let offset = 0;
+        while (offset < num.length && num[offset] === 0) offset++;
+        this.num = new Array(num.length - offset + shift);
+        for (let i = 0; i < num.length - offset; i++) {
+          this.num[i] = num[i + offset];
+        }
+      }
+      
+      QRPolynomial.prototype = {
+        get: function(index) { return this.num[index]; },
+        getLength: function() { return this.num.length; },
+        multiply: function(e) {
+          const num = new Array(this.getLength() + e.getLength() - 1);
+          for (let i = 0; i < this.getLength(); i++) {
+            for (let j = 0; j < e.getLength(); j++) {
+              num[i + j] ^= QRMath.gexp(QRMath.glog(this.get(i)) + QRMath.glog(e.get(j)));
+            }
+          }
+          return new QRPolynomial(num, 0);
+        },
+        mod: function(e) {
+          if (this.getLength() - e.getLength() < 0) return this;
+          const ratio = QRMath.glog(this.get(0)) - QRMath.glog(e.get(0));
+          const num = new Array(this.getLength());
+          for (let i = 0; i < this.getLength(); i++) {
+            num[i] = this.get(i);
+          }
+          for (let i = 0; i < e.getLength(); i++) {
+            num[i] ^= QRMath.gexp(QRMath.glog(e.get(i)) + ratio);
+          }
+          return new QRPolynomial(num, 0).mod(e);
+        }
+      };
+      
+      function QRCode(typeNumber, errorCorrectLevel) {
+        this.typeNumber = typeNumber;
+        this.errorCorrectLevel = errorCorrectLevel;
+        this.modules = null;
+        this.moduleCount = 0;
+        this.dataCache = null;
+        this.dataList = [];
+      }
+      
+      QRCode.prototype = {
+        addData: function(data) {
+          this.dataList.push({ data: data, mode: 4 });
+          this.dataCache = null;
+        },
+        make: function() {
+          this.makeImpl(false, this.getBestMaskPattern());
+        },
+        makeImpl: function(test, maskPattern) {
+          this.moduleCount = this.typeNumber * 4 + 17;
+          this.modules = new Array(this.moduleCount);
+          for (let row = 0; row < this.moduleCount; row++) {
+            this.modules[row] = new Array(this.moduleCount);
+          }
+          this.setupPositionProbePattern(0, 0);
+          this.setupPositionProbePattern(this.moduleCount - 7, 0);
+          this.setupPositionProbePattern(0, this.moduleCount - 7);
+          this.setupPositionAdjustPattern();
+          this.setupTimingPattern();
+          this.setupTypeInfo(test, maskPattern);
+          if (this.typeNumber >= 7) this.setupTypeNumber(test);
+          if (this.dataCache === null) {
+            this.dataCache = QRCode.createData(this.typeNumber, this.errorCorrectLevel, this.dataList);
+          }
+          this.mapData(this.dataCache, maskPattern);
+        },
+        setupPositionProbePattern: function(row, col) {
+          for (let r = -1; r <= 7; r++) {
+            if (row + r <= -1 || this.moduleCount <= row + r) continue;
+            for (let c = -1; c <= 7; c++) {
+              if (col + c <= -1 || this.moduleCount <= col + c) continue;
+              this.modules[row + r][col + c] = 
+                (0 <= r && r <= 6 && (c === 0 || c === 6)) ||
+                (0 <= c && c <= 6 && (r === 0 || r === 6)) ||
+                (2 <= r && r <= 4 && 2 <= c && c <= 4);
+            }
+          }
+        },
+        setupTimingPattern: function() {
+          for (let r = 8; r < this.moduleCount - 8; r++) {
+            if (this.modules[r][6] !== null) continue;
+            this.modules[r][6] = r % 2 === 0;
+          }
+          for (let c = 8; c < this.moduleCount - 8; c++) {
+            if (this.modules[6][c] !== null) continue;
+            this.modules[6][c] = c % 2 === 0;
+          }
+        },
+        setupPositionAdjustPattern: function() {
+          const pos = [6, 18, 26, 34, 42, 50, 58, 66, 74, 82][this.typeNumber - 1] || [];
+          for (let i = 0; i < pos.length; i++) {
+            for (let j = 0; j < pos.length; j++) {
+              const row = pos[i], col = pos[j];
+              if (this.modules[row][col] !== null) continue;
+              for (let r = -2; r <= 2; r++) {
+                for (let c = -2; c <= 2; c++) {
+                  this.modules[row + r][col + c] = r === -2 || r === 2 || c === -2 || c === 2 || (r === 0 && c === 0);
+                }
+              }
+            }
+          }
+        },
+        setupTypeNumber: function(test) {
+          const bits = this.typeNumber << 12;
+          let mod = bits;
+          for (let i = 0; i < 12; i++) {
+            if ((mod >>> (11 - i)) & 1) mod ^= 7973 << (11 - i);
+          }
+          const data = (bits | mod) ^ 21522;
+          for (let i = 0; i < 18; i++) {
+            this.modules[Math.floor(i / 3)][i % 3 + this.moduleCount - 8 - 3] = !test && ((data >>> i) & 1) === 1;
+          }
+        },
+        setupTypeInfo: function(test, maskPattern) {
+          const data = (this.errorCorrectLevel << 3) | maskPattern;
+          let bits = data << 10;
+          for (let i = 0; i < 10; i++) {
+            if ((bits >>> (9 - i)) & 1) bits ^= 1335 << (9 - i);
+          }
+          bits = ((data << 10) | bits) ^ 21522;
+          for (let i = 0; i < 15; i++) {
+            const mod = !test && ((bits >>> i) & 1) === 1;
+            if (i < 6) {
+              this.modules[i][8] = mod;
+            } else if (i < 8) {
+              this.modules[i + 1][8] = mod;
+            } else {
+              this.modules[this.moduleCount - 15 + i][8] = mod;
+            }
+          }
+          for (let i = 0; i < 15; i++) {
+            const mod = !test && ((bits >>> i) & 1) === 1;
+            if (i < 8) {
+              this.modules[8][this.moduleCount - i - 1] = mod;
+            } else if (i < 9) {
+              this.modules[8][15 - i] = mod;
+            } else {
+              this.modules[8][14 - i] = mod;
+            }
+          }
+          this.modules[this.moduleCount - 8][8] = !test;
+        },
+        mapData: function(data, maskPattern) {
+          let inc = -1, row = this.moduleCount - 1, bitIndex = 7, byteIndex = 0;
+          for (let col = this.moduleCount - 1; col > 0; col -= 2) {
+            if (col === 6) col--;
+            while (true) {
+              for (let c = 0; c < 2; c++) {
+                if (this.modules[row][col - c] === null) {
+                  let dark = false;
+                  if (byteIndex < data.length) dark = ((data[byteIndex] >>> bitIndex) & 1) === 1;
+                  if (this.getMask(maskPattern, row, col - c)) dark = !dark;
+                  this.modules[row][col - c] = dark;
+                  bitIndex--;
+                  if (bitIndex === -1) { byteIndex++; bitIndex = 7; }
+                }
+              }
+              row += inc;
+              if (row < 0 || this.moduleCount <= row) {
+                row -= inc;
+                inc = -inc;
+                break;
+              }
+            }
+          }
+        },
+        getMask: function(maskPattern, i, j) {
+          switch (maskPattern) {
+            case 0: return (i + j) % 2 === 0;
+            case 1: return i % 2 === 0;
+            case 2: return j % 3 === 0;
+            case 3: return (i + j) % 3 === 0;
+            case 4: return (Math.floor(i / 2) + Math.floor(j / 3)) % 2 === 0;
+            case 5: return ((i * j) % 2) + ((i * j) % 3) === 0;
+            case 6: return (((i * j) % 2) + ((i * j) % 3)) % 2 === 0;
+            case 7: return (((i + j) % 2) + ((i * j) % 3)) % 2 === 0;
+            default: throw new Error("bad maskPattern:" + maskPattern);
+          }
+        },
+        getBestMaskPattern: function() {
+          let minLostPoint = 0, pattern = 0;
+          for (let i = 0; i < 8; i++) {
+            this.makeImpl(true, i);
+            const lostPoint = this.getLostPoint();
+            if (i === 0 || minLostPoint > lostPoint) {
+              minLostPoint = lostPoint;
+              pattern = i;
+            }
+          }
+          return pattern;
+        },
+        getLostPoint: function() {
+          let lostPoint = 0;
+          for (let row = 0; row < this.moduleCount; row++) {
+            for (let col = 0; col < this.moduleCount; col++) {
+              let sameCount = 0;
+              const dark = this.modules[row][col];
+              for (let r = -1; r <= 1; r++) {
+                if (row + r < 0 || this.moduleCount <= row + r) continue;
+                for (let c = -1; c <= 1; c++) {
+                  if (col + c < 0 || this.moduleCount <= col + c) continue;
+                  if (r === 0 && c === 0) continue;
+                  if (dark === this.modules[row + r][col + c]) sameCount++;
+                }
+              }
+              if (sameCount > 5) lostPoint += (3 + sameCount - 5);
+            }
+          }
+          return lostPoint;
+        }
+      };
+      
+      QRCode.createData = function(typeNumber, errorCorrectLevel, dataList) {
+        const buffer = [];
+        for (let i = 0; i < dataList.length; i++) {
+          const data = dataList[i];
+          buffer.push(4);
+          buffer.push(data.data.length);
+          for (let j = 0; j < data.data.length; j++) {
+            buffer.push(data.data.charCodeAt(j));
+          }
+        }
+        const rsBlocks = [[1, 26, 19], [1, 44, 34]][errorCorrectLevel] || [1, 26, 19];
+        const dcdata = new Array(rsBlocks[2]);
+        let offset = 0;
+        for (let i = 0; i < buffer.length; i += 2 + buffer[i + 1]) {
+          for (let j = 0; j < buffer[i + 1]; j++) {
+            dcdata[offset++] = buffer[i + 2 + j];
+          }
+        }
+        const rsPoly = QRCode.getErrorCorrectPolynomial(rsBlocks[1] - rsBlocks[2]);
+        const rawPoly = new QRPolynomial(dcdata, rsPoly.getLength() - 1);
+        const modPoly = rawPoly.mod(rsPoly);
+        const ecdata = new Array(rsPoly.getLength() - 1);
+        for (let i = 0; i < ecdata.length; i++) {
+          const modIndex = i + modPoly.getLength() - ecdata.length;
+          ecdata[i] = modIndex >= 0 ? modPoly.get(modIndex) : 0;
+        }
+        const data = new Array(rsBlocks[1]);
+        let index = 0;
+        for (let i = 0; i < rsBlocks[0]; i++) {
+          for (let j = 0; j < rsBlocks[2]; j++) {
+            data[index++] = dcdata[i + j * rsBlocks[0]];
+          }
+        }
+        for (let i = 0; i < rsBlocks[0]; i++) {
+          for (let j = 0; j < rsBlocks[1] - rsBlocks[2]; j++) {
+            data[index++] = ecdata[i + j * rsBlocks[0]];
+          }
+        }
+        return data;
+      };
+      
+      QRCode.getErrorCorrectPolynomial = function(errorCorrectLength) {
+        let a = new QRPolynomial([1], 0);
+        for (let i = 0; i < errorCorrectLength; i++) {
+          a = a.multiply(new QRPolynomial([1, QRMath.gexp(i)], 0));
+        }
+        return a;
+      };
+      
+      return {
+        generate: function(text, size) {
+          const qr = new QRCode(5, QRErrorCorrectLevel.M);
+          qr.addData(text);
+          qr.make();
+          
+          const canvas = document.createElement("canvas");
+          const cellSize = Math.floor(size / qr.moduleCount);
+          const margin = Math.floor(cellSize * 0.5);
+          canvas.width = canvas.height = qr.moduleCount * cellSize + margin * 2;
+          
+          const ctx = canvas.getContext("2d");
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = "#000000";
+          
+          for (let row = 0; row < qr.moduleCount; row++) {
+            for (let col = 0; col < qr.moduleCount; col++) {
+              if (qr.modules[row][col]) {
+                ctx.fillRect(
+                  margin + col * cellSize,
+                  margin + row * cellSize,
+                  cellSize,
+                  cellSize
+                );
+              }
+            }
+          }
+          
+          return canvas;
+        }
+      };
+    })();
+
+    // ========================================================================
+    // USER INTERFACE FUNCTIONS
+    // ========================================================================
+    
+    function generateQRCode(text) {
+      try {
+        const container = document.getElementById('qr-display');
+        container.innerHTML = '<p class="muted">Generating QR code...</p>';
+        
+        setTimeout(() => {
+          try {
+            const canvas = QRCodeGenerator.generate(text, 280);
+            container.innerHTML = '';
+            container.appendChild(canvas);
+            showToast('✓ QR code generated successfully!', false);
+          } catch (err) {
+            container.innerHTML = '<p class="muted" style="color:var(--danger);">Failed to generate QR code</p>';
+            showToast('QR code generation failed', true);
+            console.error('QR generation error:', err);
+          }
+        }, 100);
+      } catch (e) {
+        showToast('QR code generation failed', true);
+        console.error('QR error:', e);
+      }
+    }
+
+    async function copyToClipboard(text, button) {
+      try {
+        await navigator.clipboard.writeText(text);
+        const originalText = button.innerHTML;
+        button.innerHTML = '✓ Copied!';
+        button.disabled = true;
+        setTimeout(() => {
+          button.innerHTML = originalText;
+          button.disabled = false;
+        }, 2000);
+        showToast('✓ Copied to clipboard!', false);
+      } catch (error) {
+        try {
+          const textArea = document.createElement("textarea");
+          textArea.value = text;
+          textArea.style.position = "fixed";
+          textArea.style.top = "0";
+          textArea.style.left = "0";
+          document.body.appendChild(textArea);
+          textArea.focus();
+          textArea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textArea);
+          
+          const originalText = button.innerHTML;
+          button.innerHTML = '✓ Copied!';
+          button.disabled = true;
+          setTimeout(() => {
+            button.innerHTML = originalText;
+            button.disabled = false;
+          }, 2000);
+          showToast('✓ Copied to clipboard (fallback)!', false);
+        } catch(err) {
+          showToast('Failed to copy', true);
+          console.error('Copy error:', error, err);
+        }
+      }
+    }
+
+    function downloadConfig(content, filename) {
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      showToast('✓ Configuration downloaded: ' + filename, false);
+    }
+
+    function updateExpirationDisplay() {
+      if (!window.CONFIG.expirationDateTime) {
+        const countdownEl = document.getElementById('expiry-countdown');
+        const localEl = document.getElementById('expiry-local');
+        const utcEl = document.getElementById('expiry-utc');
+        if (countdownEl) countdownEl.textContent = 'Unlimited';
+        if (localEl) localEl.textContent = 'No expiration set';
+        if (utcEl) utcEl.textContent = '';
+        return;
+      }
+      
+      const expiryDate = new Date(window.CONFIG.expirationDateTime);
+      if (isNaN(expiryDate.getTime())) {
+        document.getElementById('expiry-local').textContent = 'Invalid date';
+        document.getElementById('expiry-utc').textContent = '';
+        document.getElementById('expiry-countdown').textContent = 'Invalid';
+        return;
+      }
+      
+      const now = new Date();
+      const diffMs = expiryDate - now;
+      const diffSeconds = Math.floor(diffMs / 1000);
+      
+      const countdownEl = document.getElementById('expiry-countdown');
+      const localEl = document.getElementById('expiry-local');
+      const utcEl = document.getElementById('expiry-utc');
+      
+      if (diffSeconds < 0) {
+        countdownEl.textContent = 'Expired';
+        countdownEl.parentElement.classList.add('status-expired');
+        return;
+      }
+      
+      const days = Math.floor(diffSeconds / 86400);
+      const hours = Math.floor((diffSeconds % 86400) / 3600);
+      const minutes = Math.floor((diffSeconds % 3600) / 60);
+      const seconds = diffSeconds % 60;
+      
+      if (days > 0) {
+        countdownEl.textContent = days + 'd ' + hours + 'h';
+      } else if (hours > 0) {
+        countdownEl.textContent = hours + 'h ' + minutes + 'm';
+      } else if (minutes > 0) {
+        countdownEl.textContent = minutes + 'm ' + seconds + 's';
+      } else {
+        countdownEl.textContent = seconds + 's';
+      }
+      
+      if (localEl) localEl.textContent = 'Expires: ' + expiryDate.toLocaleString();
+      if (utcEl) utcEl.textContent = 'UTC: ' + expiryDate.toISOString().replace('T', ' ').substring(0, 19);
+    }
+
+    function animateProgressBar(targetWidth) {
+      const progressBar = document.getElementById('progress-bar-fill');
+      if (!progressBar) return;
+      setTimeout(() => {
+        progressBar.style.width = targetWidth + '%';
+      }, 100);
+    }
+
+    // ========================================================================
+    // RASPS - RESPONSIVE ADAPTIVE SMART POLLING SYSTEM (از اسکریپت دوم)
+    // Advanced auto-refresh with intelligent adaptation
+    // ========================================================================
+    
+    (function() {
+      const CONFIG = {
+        ENDPOINT: '/api/user/' + window.CONFIG.uuid,
+        POLL_MIN_MS: 50000,
+        POLL_MAX_MS: 70000,
+        INACTIVE_MULTIPLIER: 4,
+        MAX_BACKOFF_MS: 300000,
+        INITIAL_BACKOFF_MS: 2000,
+        BACKOFF_FACTOR: 1.8,
+      };
+
+      let lastDataHash = null;
+      let currentBackoff = CONFIG.INITIAL_BACKOFF_MS;
+      let isPolling = false;
+      let pollTimeout = null;
+      let isPageVisible = document.visibilityState === 'visible';
+
+      function getRandomDelay() {
+        const baseMin = CONFIG.POLL_MIN_MS;
+        const baseMax = CONFIG.POLL_MAX_MS;
+        const multiplier = isPageVisible ? 1 : CONFIG.INACTIVE_MULTIPLIER;
+        return Math.floor(Math.random() * ((baseMax - baseMin) * multiplier + 1)) + baseMin * multiplier;
+      }
+
+      function computeHash(data) {
+        const str = JSON.stringify(data);
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+          const char = str.charCodeAt(i);
+          hash = ((hash << 5) - hash) + char;
+          hash = hash & hash;
+        }
+        return hash.toString(36);
+      }
+
+      async function updateDOM(data) {
+        const usageEl = document.getElementById('usage-display');
+        if (usageEl && data.traffic_used !== undefined) {
+          usageEl.textContent = await formatBytes(data.traffic_used);
+          
+          if (window.CONFIG.trafficLimit && window.CONFIG.trafficLimit > 0) {
+            const percentage = ((data.traffic_used / window.CONFIG.trafficLimit) * 100).toFixed(2);
+            const progressFill = document.getElementById('progress-bar-fill');
+            if (progressFill) {
+              progressFill.dataset.targetWidth = percentage;
+              progressFill.className = 'progress-fill ' + (percentage > 80 ? 'high' : percentage > 50 ? 'medium' : 'low');
+              animateProgressBar(percentage);
+            }
+          }
+        }
+        
+        if (data.expiration_date && data.expiration_time) {
+          window.CONFIG.expirationDateTime = data.expiration_date + 'T' + data.expiration_time + 'Z';
+          updateExpirationDisplay();
+        }
+      }
+
+      async function fetchData() {
+        try {
+          const response = await fetch(CONFIG.ENDPOINT, {
+            method: 'GET',
+            headers: { 'Cache-Control': 'no-cache' },
+            cache: 'no-store'
+          });
+
+          if (response.status === 304) return null;
+          if (!response.ok) throw new Error('HTTP error: ' + response.status);
+
+          const data = await response.json();
+          const newHash = computeHash(data);
+          
+          if (newHash === lastDataHash) return null;
+          
+          lastDataHash = newHash;
+          return data;
+        } catch (error) {
+          console.warn('RASPS fetch error:', error.message);
+          throw error;
+        }
+      }
+
+      function scheduleNextPoll() {
+        if (pollTimeout) clearTimeout(pollTimeout);
+        const delay = getRandomDelay();
+        pollTimeout = setTimeout(poll, delay);
+      }
+
+      async function poll() {
+        if (!isPolling) return;
+        try {
+          const data = await fetchData();
+          if (data) await updateDOM(data);
+          currentBackoff = CONFIG.INITIAL_BACKOFF_MS;
+        } catch (error) {
+          currentBackoff = Math.min(currentBackoff * CONFIG.BACKOFF_FACTOR, CONFIG.MAX_BACKOFF_MS);
+        } finally {
+          scheduleNextPoll();
+        }
+      }
+
+      function handleVisibilityChange() {
+        isPageVisible = document.visibilityState === 'visible';
+        if (isPageVisible) poll();
+      }
+
+      function startPolling() {
+        if (isPolling) return;
+        isPolling = true;
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        scheduleNextPoll();
+      }
+
+      if (CONFIG.ENDPOINT) startPolling();
+    })();
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', () => {
+      updateExpirationDisplay();
+      setInterval(updateExpirationDisplay, 1000);
+      animateProgressBar(${usagePercentage.toFixed(2)});
+    });
+  </script>
+</body>
+</html>`;
+
+    const nonce = generateNonce();
+    const headers = new Headers({ 'Content-Type': 'text/html;charset=utf-8' });
+    addSecurityHeaders(headers, nonce, {
+      img: 'data: https:',
+      connect: 'https:'
+    });
+    
+    const finalHtml = userPanelHTML.replace(/CSP_NONCE_PLACEHOLDER/g, nonce);
+    return new Response(finalHtml, { headers });
+  } catch (e) {
+    console.error('handleUserPanel error:', e.message, e.stack);
+    const headers = new Headers();
+    addSecurityHeaders(headers, null, {});
+    return new Response('Internal Server Error', { status: 500, headers });
+  }
 }
 
-function ProcessProtocolHeader(protocolBuffer, userID) {
-  if (protocolBuffer.byteLength < 24) return { hasError: true, message: 'invalid data' };
+// ============================================================================
+// VLESS PROTOCOL HANDLERS - قلب سیستم اتصال
+// این بخش شامل تمام منطق WebSocket و TCP است
+// ============================================================================
 
-  const dataView = new DataView(protocolBuffer);
-  const version = dataView.getUint8(0);
-  const slicedBufferString = stringify(new Uint8Array(protocolBuffer.slice(1, 17)));
-  const uuids = userID.split(',').map((id) => id.trim());
-  const isValidUser = uuids.some((uuid) => slicedBufferString === uuid);
+async function ProtocolOverWSHandler(request, config, env, ctx) {
+  let webSocket = null;
+  try {
+    const clientIp = request.headers.get('CF-Connecting-IP');
+    
+    // بررسی امنیتی IP با Scamalytics
+    if (await isSuspiciousIP(clientIp, config.scamalytics, env.SCAMALYTICS_THRESHOLD || CONST.SCAMALYTICS_THRESHOLD)) {
+      return new Response('Access denied', { status: 403 });
+    }
 
-  if (!isValidUser) return { hasError: true, message: 'invalid user' };
+    const webSocketPair = new WebSocketPair();
+    const [client, webSocket_inner] = Object.values(webSocketPair);
+    webSocket = webSocket_inner;
+    webSocket.accept();
 
-  const optLength = dataView.getUint8(17);
-  const command = dataView.getUint8(18 + optLength);
-  if (command !== 1 && command !== 2)
-    return { hasError: true, message: `command ${command} is not supported` };
+    let address = '';
+    let portWithRandomLog = '';
+    let sessionUsage = 0;
+    let userUUID = '';
+    let udpStreamWriter = null;
 
-  const portIndex = 18 + optLength + 1;
-  const portRemote = dataView.getUint16(portIndex);
-  const addressType = dataView.getUint8(portIndex + 2);
-  let addressValue, addressLength, addressValueIndex;
+    const log = (info, event) => console.log(`[${address}:${portWithRandomLog}] ${info}`, event || '');
 
-  switch (addressType) {
-    case 1:
-      addressLength = 4;
-      addressValueIndex = portIndex + 3;
-      addressValue = new Uint8Array(
-        protocolBuffer.slice(addressValueIndex, addressValueIndex + addressLength),
-      ).join('.');
-      break;
-    case 2:
-      addressLength = dataView.getUint8(portIndex + 3);
-      addressValueIndex = portIndex + 4;
-      addressValue = new TextDecoder().decode(
-        protocolBuffer.slice(addressValueIndex, addressValueIndex + addressLength),
-      );
-      break;
-    case 3:
-      addressLength = 16;
-      addressValueIndex = portIndex + 3;
-      addressValue = Array.from({ length: 8 }, (_, i) =>
-        dataView.getUint16(addressValueIndex + i * 2).toString(16),
-      ).join(':');
-      break;
-    default:
-      return { hasError: true, message: `invalid addressType: ${addressType}` };
+    // سیستم به‌روزرسانی استفاده با Batching برای بهینه‌سازی
+    const deferredUsageUpdate = () => {
+      if (sessionUsage > 0 && userUUID) {
+        const usageToUpdate = sessionUsage;
+        const uuidToUpdate = userUUID;
+        sessionUsage = 0;
+        
+        ctx.waitUntil(
+          updateUsage(env, uuidToUpdate, usageToUpdate, ctx)
+            .catch(err => console.error(`Deferred usage update failed for ${uuidToUpdate}:`, err))
+        );
+      }
+    };
+
+    const updateInterval = setInterval(deferredUsageUpdate, 10000); // هر 10 ثانیه
+
+    const finalCleanup = () => {
+      clearInterval(updateInterval);
+      deferredUsageUpdate();
+    };
+
+    webSocket.addEventListener('close', finalCleanup, { once: true });
+    webSocket.addEventListener('error', finalCleanup, { once: true });
+
+    const earlyDataHeader = request.headers.get('Sec-WebSocket-Protocol') || '';
+    const readableWebSocketStream = MakeReadableWebSocketStream(webSocket, earlyDataHeader, log);
+    let remoteSocketWrapper = { value: null };
+
+    readableWebSocketStream
+      .pipeTo(
+        new WritableStream({
+          async write(chunk, controller) {
+            sessionUsage += chunk.byteLength;
+
+            if (udpStreamWriter) {
+              return udpStreamWriter.write(chunk);
+            }
+
+            if (remoteSocketWrapper.value) {
+              const writer = remoteSocketWrapper.value.writable.getWriter();
+              await writer.write(chunk);
+              writer.releaseLock();
+              return;
+            }
+
+            const {
+              user,
+              hasError,
+              message,
+              addressType,
+              portRemote = 443,
+              addressRemote = '',
+              rawDataIndex,
+              ProtocolVersion = new Uint8Array([0, 0]),
+              isUDP,
+            } = await ProcessProtocolHeader(chunk, env, ctx);
+
+            if (hasError || !user) {
+              controller.error(new Error('Authentication failed'));
+              return;
+            }
+
+            userUUID = user.uuid;
+
+            // بررسی انقضا
+            if (isExpired(user.expiration_date, user.expiration_time)) {
+              controller.error(new Error('Account expired'));
+              return;
+            }
+
+            // بررسی محدودیت ترافیک
+            if (user.traffic_limit && user.traffic_limit > 0) {
+              const totalUsage = (user.traffic_used || 0) + sessionUsage;
+              if (totalUsage >= user.traffic_limit) {
+                controller.error(new Error('Traffic limit exceeded'));
+                return;
+              }
+            }
+
+            // بررسی محدودیت IP
+            if (user.ip_limit && user.ip_limit > -1) {
+              const ipCount = await env.DB.prepare(
+                "SELECT COUNT(DISTINCT ip) as count FROM user_ips WHERE uuid = ?"
+              ).bind(userUUID).first('count');
+              
+              if (ipCount >= user.ip_limit) {
+                // بررسی آیا IP فعلی قبلاً ثبت شده
+                const existingIp = await env.DB.prepare(
+                  "SELECT ip FROM user_ips WHERE uuid = ? AND ip = ?"
+                ).bind(userUUID, clientIp).first();
+                
+                if (!existingIp) {
+                  controller.error(new Error('IP limit exceeded'));
+                  return;
+                }
+              }
+              
+              // به‌روزرسانی یا ثبت IP
+              await env.DB.prepare(
+                "INSERT OR REPLACE INTO user_ips (uuid, ip, last_seen) VALUES (?, ?, CURRENT_TIMESTAMP)"
+              ).bind(userUUID, clientIp).run();
+            }
+
+            address = addressRemote;
+            portWithRandomLog = `${portRemote}--${Math.random()} ${isUDP ? 'udp' : 'tcp'}`;
+            const vlessResponseHeader = new Uint8Array([ProtocolVersion[0], 0]);
+            const rawClientData = chunk.slice(rawDataIndex);
+
+            if (isUDP) {
+              if (portRemote === 53) {
+                const dnsPipeline = await createDnsPipeline(webSocket, vlessResponseHeader, log, (bytes) => {
+                  sessionUsage += bytes;
+                });
+                udpStreamWriter = dnsPipeline.write;
+                await udpStreamWriter(rawClientData);
+              } else {
+                controller.error(new Error('UDP only supported for DNS (port 53)'));
+              }
+              return;
+            }
+
+            HandleTCPOutBound(
+              remoteSocketWrapper,
+              addressType,
+              addressRemote,
+              portRemote,
+              rawClientData,
+              webSocket,
+              vlessResponseHeader,
+              log,
+              config,
+              (bytes) => { sessionUsage += bytes; }
+            );
+          },
+          close() {
+            log('readableWebSocketStream closed');
+            finalCleanup();
+          },
+          abort(err) {
+            log('readableWebSocketStream aborted', err);
+            finalCleanup();
+          },
+        }),
+      )
+      .catch(err => {
+        console.error('Pipeline failed:', err.stack || err);
+        safeCloseWebSocket(webSocket);
+        finalCleanup();
+      });
+
+    return new Response(null, { status: 101, webSocket: client });
+  } catch (e) {
+    console.error('ProtocolOverWSHandler error:', e.message, e.stack);
+    if (webSocket) {
+      try {
+        safeCloseWebSocket(webSocket);
+      } catch (closeErr) {
+        console.error('Error closing WebSocket:', closeErr);
+      }
+    }
+    const headers = new Headers();
+    addSecurityHeaders(headers, null, {});
+    return new Response('Internal Server Error', { status: 500, headers });
   }
+}
 
-  if (!addressValue)
-    return { hasError: true, message: `addressValue is empty, addressType is ${addressType}` };
+async function ProcessProtocolHeader(protocolBuffer, env, ctx) {
+  try {
+    if (protocolBuffer.byteLength < 24) {
+      return { hasError: true, message: 'invalid data' };
+    }
+  
+    const dataView = new DataView(protocolBuffer.buffer || protocolBuffer);
+    const version = dataView.getUint8(0);
 
-  return {
-    hasError: false,
-    addressRemote: addressValue,
-    addressType,
-    portRemote,
-    rawDataIndex: addressValueIndex + addressLength,
-    ProtocolVersion: new Uint8Array([version]),
-    isUDP: command === 2,
-  };
+    let uuid;
+    try {
+      uuid = stringify(new Uint8Array(protocolBuffer.slice(1, 17)));
+    } catch (e) {
+      return { hasError: true, message: 'invalid UUID format' };
+    }
+
+    const userData = await getUserData(env, uuid, ctx);
+    if (!userData) {
+      return { hasError: true, message: 'invalid user' };
+    }
+
+    const payloadStart = 17;
+    if (protocolBuffer.byteLength < payloadStart + 1) {
+      return { hasError: true, message: 'invalid data length' };
+    }
+
+    const optLength = dataView.getUint8(payloadStart);
+    const commandIndex = payloadStart + 1 + optLength;
+    
+    if (protocolBuffer.byteLength < commandIndex + 1) {
+      return { hasError: true, message: 'invalid data length (command)' };
+    }
+    
+    const command = dataView.getUint8(commandIndex);
+    if (command !== 1 && command !== 2) {
+      return { hasError: true, message: `command ${command} not supported` };
+    }
+
+    const portIndex = commandIndex + 1;
+    if (protocolBuffer.byteLength < portIndex + 2) {
+      return { hasError: true, message: 'invalid data length (port)' };
+    }
+    
+    const portRemote = dataView.getUint16(portIndex, false);
+
+    const addressTypeIndex = portIndex + 2;
+    if (protocolBuffer.byteLength < addressTypeIndex + 1) {
+      return { hasError: true, message: 'invalid data length (address type)' };
+    }
+    
+    const addressType = dataView.getUint8(addressTypeIndex);
+
+    let addressValue, addressLength, addressValueIndex;
+
+    switch (addressType) {
+      case 1: // IPv4
+        addressLength = 4;
+        addressValueIndex = addressTypeIndex + 1;
+        if (protocolBuffer.byteLength < addressValueIndex + addressLength) {
+          return { hasError: true, message: 'invalid data length (ipv4)' };
+        }
+        addressValue = new Uint8Array(protocolBuffer.slice(addressValueIndex, addressValueIndex + addressLength)).join('.');
+        break;
+        
+      case 2: // Domain
+        if (protocolBuffer.byteLength < addressTypeIndex + 2) {
+          return { hasError: true, message: 'invalid data length (domain length)' };
+        }
+        addressLength = dataView.getUint8(addressTypeIndex + 1);
+        addressValueIndex = addressTypeIndex + 2;
+        if (protocolBuffer.byteLength < addressValueIndex + addressLength) {
+          return { hasError: true, message: 'invalid data length (domain)' };
+        }
+        addressValue = new TextDecoder().decode(protocolBuffer.slice(addressValueIndex, addressValueIndex + addressLength));
+        break;
+        
+      case 3: // IPv6
+        addressLength = 16;
+        addressValueIndex = addressTypeIndex + 1;
+        if (protocolBuffer.byteLength < addressValueIndex + addressLength) {
+          return { hasError: true, message: 'invalid data length (ipv6)' };
+        }
+        addressValue = Array.from({ length: 8 }, (_, i) => 
+          dataView.getUint16(addressValueIndex + i * 2, false).toString(16)
+        ).join(':');
+        break;
+        
+      default:
+        return { hasError: true, message: `invalid addressType: ${addressType}` };
+    }
+
+    const rawDataIndex = addressValueIndex + addressLength;
+    if (protocolBuffer.byteLength < rawDataIndex) {
+      return { hasError: true, message: 'invalid data length (raw data)' };
+    }
+
+    return {
+      user: userData,
+      hasError: false,
+      addressRemote: addressValue,
+      addressType,
+      portRemote,
+      rawDataIndex,
+      ProtocolVersion: new Uint8Array([version]),
+      isUDP: command === 2,
+    };
+  } catch (e) {
+    console.error('ProcessProtocolHeader error:', e.message, e.stack);
+    return { hasError: true, message: 'protocol processing error' };
+  }
 }
 
 async function HandleTCPOutBound(
@@ -863,19 +3754,8 @@ async function HandleTCPOutBound(
   protocolResponseHeader,
   log,
   config,
+  trafficCallback
 ) {
-  if (!config) {
-    config = {
-      userID: 'd342d11e-d424-4583-b36e-524ab1f0afa4',
-      socks5Address: '',
-      socks5Relay: false,
-      proxyIP: 'nima.nscl.ir',
-      proxyPort: '443',
-      enableSocks: false,
-      parsedSocks5Address: {},
-    };
-  }
-
   async function connectAndWrite(address, port, socks = false) {
     let tcpSocket;
     if (config.socks5Relay) {
@@ -903,25 +3783,23 @@ async function HandleTCPOutBound(
         );
 
     tcpSocket.closed
-      .catch((error) => {
+      .catch(error => {
         console.log('retry tcpSocket closed error', error);
       })
       .finally(() => {
         safeCloseWebSocket(webSocket);
       });
-    RemoteSocketToWS(tcpSocket, webSocket, protocolResponseHeader, null, log);
+    RemoteSocketToWS(tcpSocket, webSocket, protocolResponseHeader, null, log, trafficCallback);
   }
 
   const tcpSocket = await connectAndWrite(addressRemote, portRemote);
-  RemoteSocketToWS(tcpSocket, webSocket, protocolResponseHeader, retry, log);
+  RemoteSocketToWS(tcpSocket, webSocket, protocolResponseHeader, retry, log, trafficCallback);
 }
 
 function MakeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
   return new ReadableStream({
     start(controller) {
-      webSocketServer.addEventListener('message', (event) =>
-        controller.enqueue(event.data),
-      );
+      webSocketServer.addEventListener('message', (event) => controller.enqueue(event.data));
       webSocketServer.addEventListener('close', () => {
         safeCloseWebSocket(webSocketServer);
         controller.close();
@@ -934,43 +3812,52 @@ function MakeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
       if (error) controller.error(error);
       else if (earlyData) controller.enqueue(earlyData);
     },
-    pull(_controller) {},
+    pull(_controller) { },
     cancel(reason) {
-      log(`ReadableStream was canceled, due to ${reason}`);
+      log(`ReadableStream canceled: ${reason}`);
       safeCloseWebSocket(webSocketServer);
     },
   });
 }
 
-async function RemoteSocketToWS(remoteSocket, webSocket, protocolResponseHeader, retry, log) {
+async function RemoteSocketToWS(remoteSocket, webSocket, protocolResponseHeader, retry, log, trafficCallback) {
   let hasIncomingData = false;
-  try {
-    await remoteSocket.readable.pipeTo(
+  await remoteSocket.readable
+    .pipeTo(
       new WritableStream({
-        async write(chunk) {
-          if (webSocket.readyState !== CONST.WS_READY_STATE_OPEN)
-            throw new Error('WebSocket is not open');
+        async write(chunk, controller) {
+          if (webSocket.readyState !== CONST.WS_READY_STATE_OPEN) {
+            controller.error(new Error('webSocket not open'));
+            return;
+          }
           hasIncomingData = true;
-          const dataToSend = protocolResponseHeader
-            ? await new Blob([protocolResponseHeader, chunk]).arrayBuffer()
-            : chunk;
-          webSocket.send(dataToSend);
-          protocolResponseHeader = null;
+          
+          if (protocolResponseHeader) {
+            webSocket.send(await new Blob([protocolResponseHeader, chunk]).arrayBuffer());
+            protocolResponseHeader = null;
+          } else {
+            webSocket.send(chunk);
+          }
+          
+          if (trafficCallback) {
+            trafficCallback(chunk.byteLength);
+          }
         },
         close() {
-          log(`Remote connection readable closed. Had incoming data: ${hasIncomingData}`);
+          log(`remoteSocket closed, hasIncomingData: ${hasIncomingData}`);
         },
         abort(reason) {
-          console.error(`Remote connection readable aborted:`, reason);
+          console.error('remoteSocket abort', reason);
         },
       }),
-    );
-  } catch (error) {
-    console.error(`RemoteSocketToWS error:`, error.stack || error);
-    safeCloseWebSocket(webSocket);
-  }
+    )
+    .catch((error) => {
+      console.error('remoteSocket pipeTo error', error);
+      safeCloseWebSocket(webSocket);
+    });
+  
   if (!hasIncomingData && retry) {
-    log(`No incoming data, retrying`);
+    log('No incoming data, retrying');
     await retry();
   }
 }
@@ -1003,13 +3890,15 @@ function safeCloseWebSocket(socket) {
   }
 }
 
-async function createDnsPipeline(webSocket, vlessResponseHeader, log) {
+async function createDnsPipeline(webSocket, vlessResponseHeader, log, trafficCallback) {
   let isHeaderSent = false;
   const transformStream = new TransformStream({
     transform(chunk, controller) {
-      for (let index = 0; index < chunk.byteLength; ) {
+      for (let index = 0; index < chunk.byteLength;) {
+        if (index + 2 > chunk.byteLength) break;
         const lengthBuffer = chunk.slice(index, index + 2);
         const udpPacketLength = new DataView(lengthBuffer).getUint16(0);
+        if (index + 2 + udpPacketLength > chunk.byteLength) break;
         const udpData = new Uint8Array(chunk.slice(index + 2, index + 2 + udpPacketLength));
         index = index + 2 + udpPacketLength;
         controller.enqueue(udpData);
@@ -1022,7 +3911,7 @@ async function createDnsPipeline(webSocket, vlessResponseHeader, log) {
       new WritableStream({
         async write(chunk) {
           try {
-            const resp = await fetch(`https://1.1.1.1/dns-query`, {
+            const resp = await fetch('https://1.1.1.1/dns-query', {
               method: 'POST',
               headers: { 'content-type': 'application/dns-message' },
               body: chunk,
@@ -1032,19 +3921,18 @@ async function createDnsPipeline(webSocket, vlessResponseHeader, log) {
             const udpSizeBuffer = new Uint8Array([(udpSize >> 8) & 0xff, udpSize & 0xff]);
 
             if (webSocket.readyState === CONST.WS_READY_STATE_OPEN) {
-              log(`DNS query successful, length: ${udpSize}`);
+              log(`DNS query success, length: ${udpSize}`);
+              let responseChunk;
               if (isHeaderSent) {
-                webSocket.send(await new Blob([udpSizeBuffer, dnsQueryResult]).arrayBuffer());
+                responseChunk = await new Blob([udpSizeBuffer, dnsQueryResult]).arrayBuffer();
               } else {
-                webSocket.send(
-                  await new Blob([
-                    vlessResponseHeader,
-                    udpSizeBuffer,
-                    dnsQueryResult,
-                  ]).arrayBuffer(),
-                );
+                responseChunk = await new Blob([vlessResponseHeader, udpSizeBuffer, dnsQueryResult]).arrayBuffer();
                 isHeaderSent = true;
               }
+              if (trafficCallback) {
+                trafficCallback(responseChunk.byteLength);
+              }
+              webSocket.send(responseChunk);
             }
           } catch (error) {
             log('DNS query error: ' + error);
@@ -1052,7 +3940,7 @@ async function createDnsPipeline(webSocket, vlessResponseHeader, log) {
         },
       }),
     )
-    .catch((e) => {
+    .catch(e => {
       log('DNS stream error: ' + e);
     });
 
@@ -1062,627 +3950,165 @@ async function createDnsPipeline(webSocket, vlessResponseHeader, log) {
   };
 }
 
-async function socks5Connect(addressType, addressRemote, portRemote, log, parsedSocks5Addr) {
-  const { username, password, hostname, port } = parsedSocks5Addr;
-  const socket = connect({ hostname, port });
-  const writer = socket.writable.getWriter();
-  const reader = socket.readable.getReader();
-  const encoder = new TextEncoder();
-
-  await writer.write(new Uint8Array([5, 2, 0, 2]));
-  let res = (await reader.read()).value;
-  if (res[0] !== 0x05 || res[1] === 0xff) throw new Error('SOCKS5 server connection failed.');
-
-  if (res[1] === 0x02) {
-    if (!username || !password) throw new Error('SOCKS5 auth credentials not provided.');
-    const authRequest = new Uint8Array([
-      1,
-      username.length,
-      ...encoder.encode(username),
-      password.length,
-      ...encoder.encode(password),
-    ]);
-    await writer.write(authRequest);
-    res = (await reader.read()).value;
-    if (res[0] !== 0x01 || res[1] !== 0x00) throw new Error('SOCKS5 authentication failed.');
+function parseIPv6(ipv6) {
+  const buffer = new ArrayBuffer(16);
+  const view = new DataView(buffer);
+  
+  const parts = ipv6.split('::');
+  let left = parts[0] ? parts[0].split(':') : [];
+  let right = parts[1] ? parts[1].split(':') : [];
+  
+  if (left.length === 1 && left[0] === '') left = [];
+  if (right.length === 1 && right[0] === '') right = [];
+  
+  const missing = 8 - (left.length + right.length);
+  const expansion = [];
+  if (missing > 0) {
+    for (let i = 0; i < missing; i++) {
+      expansion.push('0000');
+    }
   }
+  
+  const hextets = [...left, ...expansion, ...right];
+  
+  for (let i = 0; i < 8; i++) {
+    const val = parseInt(hextets[i] || '0', 16);
+    view.setUint16(i * 2, val, false);
+  }
+  
+  return new Uint8Array(buffer);
+}
 
-  let DSTADDR;
-  switch (addressType) {
-    case 1:
-      DSTADDR = new Uint8Array([1, ...addressRemote.split('.').map(Number)]);
-      break;
-    case 2:
-      DSTADDR = new Uint8Array([3, addressRemote.length, ...encoder.encode(addressRemote)]);
-      break;
-    case 3:
-      DSTADDR = new Uint8Array([
-        4,
-        ...addressRemote
-          .split(':')
-          .flatMap((x) => [
-            parseInt(x.slice(0, 2), 16),
-            parseInt(x.slice(2), 16),
-          ]),
+async function socks5Connect(addressType, addressRemote, portRemote, log, parsedSocks5Address) {
+  const { username, password, hostname, port } = parsedSocks5Address;
+  
+  let socket;
+  let reader;
+  let writer;
+  let success = false;
+
+  try {
+    socket = connect({ hostname, port });
+    reader = socket.readable.getReader();
+    writer = socket.writable.getWriter();
+    
+    const encoder = new TextEncoder();
+
+    await writer.write(new Uint8Array([5, 2, 0, 2]));
+    let res = (await reader.read()).value;
+    if (!res || res[0] !== 0x05 || res[1] === 0xff) {
+      throw new Error('SOCKS5 handshake failed');
+    }
+
+    if (res[1] === 0x02) {
+      if (!username || !password) {
+        throw new Error('SOCKS5 requires credentials');
+      }
+      const authRequest = new Uint8Array([
+        1,
+        username.length,
+        ...encoder.encode(username),
+        password.length,
+        ...encoder.encode(password)
       ]);
-      break;
-    default:
-      throw new Error(`Invalid addressType for SOCKS5: ${addressType}`);
+      await writer.write(authRequest);
+      res = (await reader.read()).value;
+      if (!res || res[0] !== 0x01 || res[1] !== 0x00) {
+        throw new Error(`SOCKS5 auth failed (Code: ${res[1]})`);
+      }
+    }
+
+    let dstAddr;
+    switch (addressType) {
+      case 1:
+        dstAddr = new Uint8Array([1, ...addressRemote.split('.').map(Number)]);
+        break;
+      case 2:
+        dstAddr = new Uint8Array([3, addressRemote.length, ...encoder.encode(addressRemote)]);
+        break;
+      case 3:
+        const ipv6Bytes = parseIPv6(addressRemote);
+        if (ipv6Bytes.length !== 16) {
+          throw new Error(`Failed to parse IPv6: ${addressRemote}`);
+        }
+        dstAddr = new Uint8Array(1 + 16);
+        dstAddr[0] = 4;
+        dstAddr.set(ipv6Bytes, 1);
+        break;
+      default:
+        throw new Error(`Invalid address type: ${addressType}`);
+    }
+
+    const socksRequest = new Uint8Array([
+      5, 1, 0, ...dstAddr, portRemote >> 8, portRemote & 0xff
+    ]);
+    await writer.write(socksRequest);
+    
+    res = (await reader.read()).value;
+    if (!res || res[1] !== 0x00) {
+      throw new Error(`SOCKS5 connection failed (Code: ${res[1]})`);
+    }
+
+    log(`SOCKS5 connection to ${addressRemote}:${portRemote} established`);
+    success = true;
+    return socket;
+
+  } catch (err) {
+    log(`socks5Connect error: ${err.message}`, err);
+    throw err;
+  } finally {
+    if (writer) writer.releaseLock();
+    if (reader) reader.releaseLock();
+    
+    if (!success && socket) {
+      try {
+        socket.abort();
+      } catch (e) {
+        log('Error aborting SOCKS5 socket', e);
+      }
+    }
   }
-
-  const socksRequest = new Uint8Array([5, 1, 0, ...DSTADDR, portRemote >> 8, portRemote & 0xff]);
-  await writer.write(socksRequest);
-  res = (await reader.read()).value;
-  if (res[1] !== 0x00) throw new Error('Failed to open SOCKS5 connection.');
-
-  writer.releaseLock();
-  reader.releaseLock();
-  return socket;
 }
 
 function socks5AddressParser(address) {
-  try {
-    const [authPart, hostPart] = address.includes('@') ? address.split('@') : [null, address];
-    const [hostname, portStr] = hostPart.split(':');
-    const port = parseInt(portStr, 10);
-    if (!hostname || isNaN(port)) throw new Error();
-
-    let username, password;
-    if (authPart) {
-      [username, password] = authPart.split(':');
-      if (!username) throw new Error();
-    }
-    return { username, password, hostname, port };
-  } catch {
-    throw new Error('Invalid SOCKS5 address format. Expected [user:pass@]host:port');
+  if (!address || typeof address !== 'string') {
+    throw new Error('Invalid SOCKS5 address format');
   }
-}
+  const [authPart, hostPart] = address.includes('@') ? address.split('@') : [null, address];
+  const lastColonIndex = hostPart.lastIndexOf(':');
 
-// ============================================================================
-// ADMIN PANEL (کامل از اسکریپت دوم - با همه قابلیت‌ها)
-// ============================================================================
-
-async function isAdmin(request, env) {
-  const cookieHeader = request.headers.get('Cookie');
-  if (!cookieHeader) return false;
-
-  const token = cookieHeader.match(/auth_token=([^;]+)/)?.[1];
-  if (!token) return false;
-
-  const hashedToken = await hashSHA256(token);
-  const storedHashedToken = await kvGet(env.DB, 'admin_session_token_hash');
-  return storedHashedToken && timingSafeEqual(hashedToken, storedHashedToken);
-}
-
-async function handleAdminRequest(request, env, ctx, adminPrefix) {
-  try {
-    await ensureTablesExist(env, ctx);
-    
-    const url = new URL(request.url);
-    const jsonHeader = { 'Content-Type': 'application/json' };
-    const htmlHeaders = new Headers({ 'Content-Type': 'text/html;charset=utf-8' });
-    const clientIp = request.headers.get('CF-Connecting-IP');
-
-    if (!env.ADMIN_KEY) {
-      addSecurityHeaders(htmlHeaders, null, {});
-      return new Response('Admin panel is not configured.', { status: 503, headers: htmlHeaders });
-    }
-
-    if (env.ADMIN_IP_WHITELIST) {
-      const allowedIps = env.ADMIN_IP_WHITELIST.split(',').map(ip => ip.trim());
-      if (!allowedIps.includes(clientIp)) {
-        console.warn(`Admin access denied for IP: ${clientIp}`);
-        addSecurityHeaders(htmlHeaders, null, {});
-        return new Response('Access denied.', { status: 403, headers: htmlHeaders });
-      }
-    } else {
-      const scamalyticsConfig = {
-        username: env.SCAMALYTICS_USERNAME || Config.scamalytics.username,
-        apiKey: env.SCAMALYTICS_API_KEY || Config.scamalytics.apiKey,
-        baseUrl: env.SCAMALYTICS_BASEURL || Config.scamalytics.baseUrl,
-      };
-      if (await isSuspiciousIP(clientIp, scamalyticsConfig, env.SCAMALYTICS_THRESHOLD || CONST.SCAMALYTICS_THRESHOLD)) {
-        console.warn(`Admin access denied for suspicious IP: ${clientIp}`);
-        addSecurityHeaders(htmlHeaders, null, {});
-        return new Response('Access denied.', { status: 403, headers: htmlHeaders });
-      }
-    }
-
-    const adminBasePath = `/${adminPrefix}/${env.ADMIN_KEY}`;
-
-    if (!url.pathname.startsWith(adminBasePath)) {
-      const headers = new Headers();
-      addSecurityHeaders(headers, null, {});
-      return new Response('Not found', { status: 404, headers });
-    }
-
-    const adminSubPath = url.pathname.substring(adminBasePath.length) || '/';
-
-    // رسیدگی به API Endpoints
-    if (adminSubPath.startsWith('/api/')) {
-      if (!env.DB) {
-        const headers = new Headers(jsonHeader);
-        addSecurityHeaders(headers, null, {});
-        return new Response(JSON.stringify({ error: 'Database not configured' }), { status: 503, headers });
-      }
-
-      if (!(await isAdmin(request, env))) {
-        const headers = new Headers(jsonHeader);
-        addSecurityHeaders(headers, null, {});
-        return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers });
-      }
-
-      const apiRateKey = `admin_api_rate:${clientIp}`;
-      if (await checkRateLimit(env.DB, apiRateKey, 100, 60)) {
-        const headers = new Headers(jsonHeader);
-        addSecurityHeaders(headers, null, {});
-        return new Response(JSON.stringify({ error: 'API rate limit exceeded' }), { status: 429, headers });
-      }
-
-      if (request.method !== 'GET') {
-        const origin = request.headers.get('Origin');
-        const secFetch = request.headers.get('Sec-Fetch-Site');
-
-        if (!origin || new URL(origin).hostname !== url.hostname || secFetch !== 'same-origin') {
-          const headers = new Headers(jsonHeader);
-          addSecurityHeaders(headers, null, {});
-          return new Response(JSON.stringify({ error: 'Invalid Origin/Request' }), { status: 403, headers });
-        }
-
-        const csrfToken = request.headers.get('X-CSRF-Token');
-        const cookieCsrf = request.headers.get('Cookie')?.match(/csrf_token=([^;]+)/)?.[1];
-        if (!csrfToken || !cookieCsrf || !timingSafeEqual(csrfToken, cookieCsrf)) {
-          const headers = new Headers(jsonHeader);
-          addSecurityHeaders(headers, null, {});
-          return new Response(JSON.stringify({ error: 'CSRF validation failed' }), { status: 403, headers });
-        }
-      }
-      
-      // API Routes - Stats
-      if (adminSubPath === '/api/stats' && request.method === 'GET') {
-        const headers = new Headers(jsonHeader);
-        addSecurityHeaders(headers, null, {});
-        try {
-          const totalUsers = await env.DB.prepare("SELECT COUNT(*) as count FROM users").first('count');
-          const expiredQuery = await env.DB.prepare("SELECT COUNT(*) as count FROM users WHERE datetime(expiration_date || 'T' || expiration_time || 'Z') < datetime('now')").first();
-          const expiredUsers = expiredQuery?.count || 0;
-          const activeUsers = totalUsers - expiredUsers;
-          const totalTrafficQuery = await env.DB.prepare("SELECT SUM(traffic_used) as sum FROM users").first();
-          const totalTraffic = totalTrafficQuery?.sum || 0;
-          return new Response(JSON.stringify({ 
-            total_users: totalUsers, 
-            active_users: activeUsers, 
-            expired_users: expiredUsers, 
-            total_traffic: totalTraffic 
-          }), { status: 200, headers });
-        } catch (e) {
-          return new Response(JSON.stringify({ error: e.message }), { status: 500, headers });
-        }
-      }
-
-      // API Routes - Get Users
-      if (adminSubPath === '/api/users' && request.method === 'GET') {
-        const headers = new Headers(jsonHeader);
-        addSecurityHeaders(headers, null, {});
-        try {
-          const { results } = await env.DB.prepare("SELECT uuid, created_at, expiration_date, expiration_time, notes, traffic_limit, traffic_used, ip_limit FROM users ORDER BY created_at DESC").all();
-          return new Response(JSON.stringify(results ?? []), { status: 200, headers });
-        } catch (e) {
-          return new Response(JSON.stringify({ error: e.message }), { status: 500, headers });
-        }
-      }
-
-      // API Routes - Create User
-      if (adminSubPath === '/api/users' && request.method === 'POST') {
-        const headers = new Headers(jsonHeader);
-        addSecurityHeaders(headers, null, {});
-        try {
-          const { uuid, exp_date: expDate, exp_time: expTime, notes, traffic_limit, ip_limit } = await request.json();
-
-          if (!uuid || !expDate || !expTime || !/^\d{4}-\d{2}-\d{2}$/.test(expDate) || !/^\d{2}:\d{2}:\d{2}$/.test(expTime)) {
-            throw new Error('Invalid or missing fields.');
-          }
-
-          await env.DB.prepare("INSERT INTO users (uuid, expiration_date, expiration_time, notes, traffic_limit, ip_limit, traffic_used) VALUES (?, ?, ?, ?, ?, ?, 0)")
-            .bind(uuid, expDate, expTime, notes || null, traffic_limit, ip_limit || -1).run();
-          
-          ctx.waitUntil(kvPut(env.DB, `user:${uuid}`, { 
-            uuid,
-            expiration_date: expDate, 
-            expiration_time: expTime, 
-            notes: notes || null,
-            traffic_limit: traffic_limit, 
-            ip_limit: ip_limit || -1,
-            traffic_used: 0 
-          }, { expirationTtl: 3600 }));
-
-          return new Response(JSON.stringify({ success: true, uuid }), { status: 201, headers });
-        } catch (error) {
-          if (error.message?.includes('UNIQUE constraint failed')) {
-            return new Response(JSON.stringify({ error: 'UUID already exists.' }), { status: 409, headers });
-          }
-          return new Response(JSON.stringify({ error: error.message }), { status: 400, headers });
-        }
-      }
-
-      // API Routes - Bulk Delete
-      if (adminSubPath === '/api/users/bulk-delete' && request.method === 'POST') {
-        const headers = new Headers(jsonHeader);
-        addSecurityHeaders(headers, null, {});
-        try {
-          const { uuids } = await request.json();
-          if (!Array.isArray(uuids) || uuids.length === 0) {
-            throw new Error('Invalid request body.');
-          }
-
-          const deleteUserStmt = env.DB.prepare("DELETE FROM users WHERE uuid = ?");
-          const stmts = uuids.map(uuid => deleteUserStmt.bind(uuid));
-          await env.DB.batch(stmts);
-
-          ctx.waitUntil(Promise.all(uuids.map(uuid => kvDelete(env.DB, `user:${uuid}`))));
-
-          return new Response(JSON.stringify({ success: true, count: uuids.length }), { status: 200, headers });
-        } catch (error) {
-          return new Response(JSON.stringify({ error: error.message }), { status: 400, headers });
-        }
-      }
-
-      // API Routes - Update User
-      const userRouteMatch = adminSubPath.match(/^\/api\/users\/([a-f0-9-]+)$/);
-
-      if (userRouteMatch && request.method === 'PUT') {
-        const headers = new Headers(jsonHeader);
-        addSecurityHeaders(headers, null, {});
-        const uuid = userRouteMatch[1];
-        try {
-          const { exp_date: expDate, exp_time: expTime, notes, traffic_limit, ip_limit, reset_traffic } = await request.json();
-          if (!expDate || !expTime) {
-            throw new Error('Invalid date/time fields.');
-          }
-
-          let query = "UPDATE users SET expiration_date = ?, expiration_time = ?, notes = ?, traffic_limit = ?, ip_limit = ?";
-          let binds = [expDate, expTime, notes || null, traffic_limit, ip_limit || -1];
-          
-          if (reset_traffic) {
-            query += ", traffic_used = 0";
-          }
-          
-          query += " WHERE uuid = ?";
-          binds.push(uuid);
-
-          await env.DB.prepare(query).bind(...binds).run();
-          
-          ctx.waitUntil(kvDelete(env.DB, `user:${uuid}`));
-
-          return new Response(JSON.stringify({ success: true, uuid }), { status: 200, headers });
-        } catch (error) {
-          return new Response(JSON.stringify({ error: error.message }), { status: 400, headers });
-        }
-      }
-
-      // API Routes - Delete User
-      if (userRouteMatch && request.method === 'DELETE') {
-        const headers = new Headers(jsonHeader);
-        addSecurityHeaders(headers, null, {});
-        const uuid = userRouteMatch[1];
-        try {
-          await env.DB.prepare("DELETE FROM users WHERE uuid = ?").bind(uuid).run();
-          ctx.waitUntil(kvDelete(env.DB, `user:${uuid}`));
-          return new Response(JSON.stringify({ success: true, uuid }), { status: 200, headers });
-        } catch (error) {
-          return new Response(JSON.stringify({ error: error.message }), { status: 500, headers });
-        }
-      }
-
-      // API Routes - Logout
-      if (adminSubPath === '/api/logout' && request.method === 'POST') {
-        const headers = new Headers(jsonHeader);
-        addSecurityHeaders(headers, null, {});
-        try {
-          await kvDelete(env.DB, 'admin_session_token_hash');
-          const setCookie = [
-            'auth_token=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Strict',
-            'csrf_token=; Max-Age=0; Path=/; Secure; SameSite=Strict'
-          ];
-          headers.append('Set-Cookie', setCookie[0]);
-          headers.append('Set-Cookie', setCookie[1]);
-          return new Response(JSON.stringify({ success: true }), { status: 200, headers });
-        } catch (error) {
-          return new Response(JSON.stringify({ error: error.message }), { status: 500, headers });
-        }
-      }
-
-      // API Routes - Health Check
-      if (adminSubPath === '/api/health-check' && request.method === 'POST') {
-        const headers = new Headers(jsonHeader);
-        addSecurityHeaders(headers, null, {});
-        try {
-          await performHealthCheck(env, ctx);
-          return new Response(JSON.stringify({ success: true }), { status: 200, headers });
-        } catch (error) {
-          return new Response(JSON.stringify({ error: error.message }), { status: 500, headers });
-        }
-      }
-
-      const headers = new Headers(jsonHeader);
-      addSecurityHeaders(headers, null, {});
-      return new Response(JSON.stringify({ error: 'API route not found' }), { status: 404, headers });
-    }
-
-    // صفحه اصلی Admin Panel
-    if (adminSubPath === '/') {
-      
-      if (request.method === 'POST') {
-        const rateLimitKey = `login_fail_ip:${clientIp}`;
-        
-        try {
-          const failCountStr = await kvGet(env.DB, rateLimitKey);
-          const failCount = parseInt(failCountStr, 10) || 0;
-          
-          if (failCount >= CONST.ADMIN_LOGIN_FAIL_LIMIT) {
-            addSecurityHeaders(htmlHeaders, null, {});
-            return new Response('Too many failed login attempts.', { status: 429, headers: htmlHeaders });
-          }
-          
-          const formData = await request.formData();
-          
-          if (timingSafeEqual(formData.get('password'), env.ADMIN_KEY)) {
-            const token = crypto.randomUUID();
-            const csrfToken = crypto.randomUUID();
-            const hashedToken = await hashSHA256(token);
-            ctx.waitUntil(Promise.all([
-              kvPut(env.DB, 'admin_session_token_hash', hashedToken, { expirationTtl: 86400 }),
-              kvDelete(env.DB, rateLimitKey)
-            ]));
-            
-            const headers = new Headers({
-              'Location': adminBasePath,
-            });
-            headers.append('Set-Cookie', `auth_token=${token}; HttpOnly; Secure; Path=${adminBasePath}; Max-Age=86400; SameSite=Strict`);
-            headers.append('Set-Cookie', `csrf_token=${csrfToken}; Secure; Path=${adminBasePath}; Max-Age=86400; SameSite=Strict`);
-
-            addSecurityHeaders(headers, null, {});
-            
-            return new Response(null, { status: 302, headers });
-          
-          } else {
-            ctx.waitUntil(kvPut(env.DB, rateLimitKey, (failCount + 1).toString(), { expirationTtl: CONST.ADMIN_LOGIN_LOCK_TTL }));
-            
-            addSecurityHeaders(htmlHeaders, null, {});
-            return new Response('Invalid password', { status: 401, headers: htmlHeaders });
-          }
-        } catch (e) {
-          console.error("Admin login error:", e.stack);
-          addSecurityHeaders(htmlHeaders, null, {});
-          return new Response('An internal error occurred.', { status: 500, headers: htmlHeaders });
-        }
-      }
-
-      if (request.method === 'GET') {
-        const nonce = generateNonce();
-        addSecurityHeaders(htmlHeaders, nonce, {});
-        
-        // به دلیل محدودیت طول، HTML را از اینجا import می‌کنیم
-        // در اینجا فقط یک نمونه ساده قرار می‌دهم
-        const simpleAdminHtml = `
-<!DOCTYPE html>
-<html>
-<head><title>Admin Panel</title></head>
-<body>
-<h1>Admin Panel</h1>
-${await isAdmin(request, env) ? '<p>Welcome, Admin!</p>' : '<form method="POST"><input type="password" name="password" required><button>Login</button></form>'}
-</body>
-</html>
-        `;
-        
-        return new Response(simpleAdminHtml, { headers: htmlHeaders });
-      }
-
-      const headers = new Headers();
-      addSecurityHeaders(headers, null, {});
-      return new Response('Method Not Allowed', { status: 405, headers });
-    }
-
-    const headers = new Headers();
-    addSecurityHeaders(headers, null, {});
-    return new Response('Not found', { status: 404, headers });
-  } catch (e) {
-    console.error('handleAdminRequest error:', e.message, e.stack);
-    const headers = new Headers();
-    addSecurityHeaders(headers, null, {});
-    return new Response('Internal Server Error', { status: 500, headers });
-  }
-}
-
-// ============================================================================
-// USER PANEL HTML (نسخه ساده‌شده)
-// ============================================================================
-
-async function handleUserPanel(request, userID, hostName, proxyAddress, userData, clientIp) {
-  try {
-    const subXrayUrl = `https://${hostName}/xray/${userID}`;
-    const subSbUrl = `https://${hostName}/sb/${userID}`;
-    
-    const singleXrayConfig = buildLink({ core:'xray', proto: 'tls', userID, hostName, address: hostName, port: 443, tag: 'Main' });
-    const singleSingboxConfig = buildLink({ core: 'sb', proto: 'tls', userID, hostName, address: hostName, port: 443, tag: 'Main' });
-
-    const isUserExpired = isExpired(userData.expiration_date, userData.expiration_time);
-    const expirationDateTime = userData.expiration_date && userData.expiration_time 
-      ? `${userData.expiration_date}T${userData.expiration_time}Z` 
-      : null;
-
-    let usagePercentage = 0;
-    if (userData.traffic_limit && userData.traffic_limit > 0) {
-      usagePercentage = Math.min(((userData.traffic_used || 0) / userData.traffic_limit) * 100, 100);
-    }
-
-    const usageDisplay = await formatBytes(userData.traffic_used || 0);
-    let trafficLimitStr = 'Unlimited';
-    if (userData.traffic_limit && userData.traffic_limit > 0) {
-      trafficLimitStr = await formatBytes(userData.traffic_limit);
-    }
-
-    const userPanelHTML = `
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>User Panel — VLESS Configuration</title>
-  <style nonce="CSP_NONCE_PLACEHOLDER">
-    :root{
-      --bg:#0b1220; --card:#0f1724; --muted:#9aa4b2; --accent:#3b82f6;
-      --success:#22c55e; --danger:#ef4444;
-    }
-    *{box-sizing:border-box}
-    body{
-      margin:0; font-family: Inter, system-ui, sans-serif;
-      background: linear-gradient(180deg,#061021 0%, #071323 100%);
-      color:#e6eef8; padding:28px; min-height:100vh;
-    }
-    .container{max-width:1100px;margin:0 auto}
-    .card{background:var(--card); border-radius:12px; padding:20px;
-      border:1px solid rgba(255,255,255,0.03); margin-bottom:20px;}
-    h1{font-size:28px; margin:0 0 8px}
-    .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin:20px 0}
-    .stat{padding:14px;background:rgba(255,255,255,0.02);border-radius:10px;text-align:center}
-    .stat .val{font-weight:700;font-size:22px;margin-bottom:4px}
-    .stat .lbl{color:var(--muted);font-size:12px;text-transform:uppercase}
-    .stat.status-active .val{color:var(--success)}
-    .stat.status-expired .val{color:var(--danger)}
-    .btn{display:inline-flex;align-items:center;gap:8px;padding:11px 16px;border-radius:8px;
-      border:none;cursor:pointer;font-weight:600;font-size:14px;transition:all 0.2s;
-      text-decoration:none;color:inherit}
-    .btn.primary{background:var(--accent);color:#fff}
-    .btn.primary:hover{transform:translateY(-2px)}
-    pre{background:#071529;padding:14px;border-radius:8px;overflow:auto;font-size:13px;margin:10px 0}
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>🚀 VXR.SXR Configuration Panel</h1>
-    <p style="color:var(--muted);margin-bottom:20px">Manage your proxy configuration and monitor usage</p>
-
-    <div class="stats">
-      <div class="stat ${isUserExpired ? 'status-expired' : 'status-active'}">
-        <div class="val">${isUserExpired ? 'Expired' : 'Active'}</div>
-        <div class="lbl">Status</div>
-      </div>
-      <div class="stat">
-        <div class="val">${usageDisplay}</div>
-        <div class="lbl">Used</div>
-      </div>
-      <div class="stat">
-        <div class="val">${trafficLimitStr}</div>
-        <div class="lbl">Limit</div>
-      </div>
-      <div class="stat">
-        <div class="val">${usagePercentage.toFixed(1)}%</div>
-        <div class="lbl">Usage</div>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>📱 Xray Subscription</h2>
-      <button class="btn primary" onclick="copy('${subXrayUrl}')">📋 Copy Link</button>
-      <pre>${escapeHTML(singleXrayConfig)}</pre>
-    </div>
-
-    <div class="card">
-      <h2>📱 Sing-Box Subscription</h2>
-      <button class="btn primary" onclick="copy('${subSbUrl}')">📋 Copy Link</button>
-      <pre>${escapeHTML(singleSingboxConfig)}</pre>
-    </div>
-
-    <div class="card">
-      <h2>👤 Account Details</h2>
-      <p><strong>UUID:</strong> ${userID}</p>
-      <p><strong>Proxy:</strong> ${proxyAddress || hostName}</p>
-      <p><strong>Your IP:</strong> ${clientIp}</p>
-      ${userData.notes ? `<p><strong>Notes:</strong> ${escapeHTML(userData.notes)}</p>` : ''}
-    </div>
-  </div>
-
-  <script nonce="CSP_NONCE_PLACEHOLDER">
-    function copy(text) {
-      navigator.clipboard.writeText(text).then(() => {
-        alert('Copied to clipboard!');
-      }).catch(() => {
-        alert('Failed to copy');
-      });
-    }
-  </script>
-</body>
-</html>
-    `;
-
-    const nonce = generateNonce();
-    const headers = new Headers({ 'Content-Type': 'text/html;charset=utf-8' });
-    addSecurityHeaders(headers, nonce, {});
-    
-    let finalHtml = userPanelHTML.replace(/CSP_NONCE_PLACEHOLDER/g, nonce);
-
-    return new Response(finalHtml, { headers });
-  } catch (e) {
-    console.error('handleUserPanel error:', e.message);
-    const headers = new Headers();
-    addSecurityHeaders(headers, null, {});
-    return new Response('Internal Server Error', { status: 500, headers });
-  }
-}
-
-// ============================================================================
-// HEALTH CHECK
-// ============================================================================
-
-async function performHealthCheck(env, ctx) {
-  if (!env.DB) {
-    console.warn('performHealthCheck: D1 binding not available');
-    return;
+  if (lastColonIndex === -1) {
+    throw new Error('Invalid SOCKS5 address: missing port');
   }
   
-  const proxyIps = env.PROXYIPS ? env.PROXYIPS.split(',').map(ip => ip.trim()) : Config.proxyIPs;
-  
-  const healthStmts = [];
-  
-  for (const ipPort of proxyIps) {
-    const [host, port = '443'] = ipPort.split(':');
-    let latency = null;
-    let isHealthy = 0;
-    
-    const start = Date.now();
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), CONST.HEALTH_CHECK_TIMEOUT);
-      
-      const response = await fetch(`https://${host}:${port}`, { signal: controller.signal });
-      clearTimeout(timeoutId);
-      
-      if (response.ok) {
-        latency = Date.now() - start;
-        isHealthy = 1;
-      }
-    } catch (e) {
-      console.error(`Health check failed for ${ipPort}: ${e.message}`);
+  let hostname;
+  if (hostPart.startsWith('[')) {
+    const closingBracketIndex = hostPart.lastIndexOf(']');
+    if (closingBracketIndex === -1 || closingBracketIndex > lastColonIndex) {
+      throw new Error('Invalid IPv6 SOCKS5 address');
     }
-    
-    healthStmts.push(
-      env.DB.prepare(
-        "INSERT OR REPLACE INTO proxy_health (ip_port, is_healthy, latency_ms, last_check) VALUES (?, ?, ?, ?)"
-      ).bind(ipPort, isHealthy, latency, Date.now())
-    );
+    hostname = hostPart.substring(1, closingBracketIndex);
+  } else {
+    hostname = hostPart.substring(0, lastColonIndex);
+  }
+
+  const portStr = hostPart.substring(lastColonIndex + 1);
+  const port = parseInt(portStr, 10);
+  
+  if (!hostname || isNaN(port)) {
+    throw new Error('Invalid SOCKS5 address');
+  }
+
+  let username, password;
+  if (authPart) {
+    [username, password] = authPart.split(':');
   }
   
-  try {
-    await env.DB.batch(healthStmts);
-    console.log('Proxy health check completed.');
-  } catch (e) {
-    console.error(`performHealthCheck batch error: ${e.message}`);
-  }
+  return { username, password, hostname, port };
 }
 
 // ============================================================================
-// MAIN FETCH HANDLER (ترکیب کامل)
+// MAIN FETCH HANDLER - نقطه ورود اصلی Worker
 // ============================================================================
 
 export default {
@@ -1691,14 +4117,13 @@ export default {
       await ensureTablesExist(env, ctx);
       
       let cfg;
-      
       try {
         cfg = await Config.fromEnv(env);
       } catch (err) {
-        console.error(`Configuration Error: ${err.message}`);
+        console.error(`Configuration error: ${err.message}`);
         const headers = new Headers();
         addSecurityHeaders(headers, null, {});
-        return new Response('Service temporarily unavailable', { status: 503, headers });
+        return new Response('Service unavailable', { status: 503, headers });
       }
 
       const url = new URL(request.url);
@@ -1723,7 +4148,7 @@ export default {
         return new Response('Health check performed', { status: 200, headers });
       }
 
-      // API برای دریافت اطلاعات کاربر
+      // API endpoint برای User Panel
       if (url.pathname.startsWith('/api/user/')) {
         const uuid = url.pathname.substring('/api/user/'.length);
         const headers = new Headers({ 'Content-Type': 'application/json' });
@@ -1739,7 +4164,7 @@ export default {
         
         const userData = await getUserData(env, uuid, ctx);
         if (!userData) {
-          return new Response(JSON.stringify({ error: 'Authentication failed' }), { status: 403, headers });
+          return new Response(JSON.stringify({ error: 'User not found' }), { status: 404, headers });
         }
         
         return new Response(JSON.stringify({
@@ -1750,24 +4175,27 @@ export default {
         }), { status: 200, headers });
       }
 
+      // Favicon redirect
       if (url.pathname === '/favicon.ico') {
         return new Response(null, {
           status: 301,
-          headers: { Location: 'https://www.google.com/favicon.ico' }
+          headers: { 'Location': 'https://www.google.com/favicon.ico' }
         });
       }
 
-      // رسیدگی به اتصالات WebSocket
+      // WebSocket Upgrade Handler - قلب سیستم VLESS Protocol
       const upgradeHeader = request.headers.get('Upgrade');
       if (upgradeHeader?.toLowerCase() === 'websocket') {
         if (!env.DB) {
           const headers = new Headers();
           addSecurityHeaders(headers, null, {});
-          return new Response('Service not configured properly', { status: 503, headers });
+          return new Response('Service not configured', { status: 503, headers });
         }
         
-        // Domain Fronting: تنظیم Host header تصادفی
-        const hostHeaders = env.HOST_HEADERS ? env.HOST_HEADERS.split(',').map(h => h.trim()) : ['speed.cloudflare.com'];
+        // Domain Fronting برای دور زدن سانسور
+        const hostHeaders = env.HOST_HEADERS 
+          ? env.HOST_HEADERS.split(',').map(h => h.trim()) 
+          : ['speed.cloudflare.com', 'www.cloudflare.com'];
         const evasionHost = pick(hostHeaders);
         const newHeaders = new Headers(request.headers);
         newHeaders.set('Host', evasionHost);
@@ -1781,9 +4209,10 @@ export default {
           socks5Relay: cfg.socks5.relayMode,
           enableSocks: cfg.socks5.enabled,
           parsedSocks5Address: cfg.socks5.enabled ? socks5AddressParser(cfg.socks5.address) : {},
+          scamalytics: cfg.scamalytics,
         };
         
-        const wsResponse = await ProtocolOverWSHandler(newRequest, requestConfig);
+        const wsResponse = await ProtocolOverWSHandler(newRequest, requestConfig, env, ctx);
         
         const headers = new Headers(wsResponse.headers);
         addSecurityHeaders(headers, null, {});
@@ -1795,7 +4224,7 @@ export default {
         });
       }
 
-      // رسیدگی به Subscription Links
+      // Subscription Handlers - مدیریت لینک‌های اشتراک
       const handleSubscription = async (core) => {
         const rateLimitKey = `user_path_rate:${clientIp}`;
         if (await checkRateLimit(env.DB, rateLimitKey, CONST.USER_PATH_RATE_LIMIT, CONST.USER_PATH_RATE_TTL)) {
@@ -1815,23 +4244,23 @@ export default {
         if (!userData) {
           const headers = new Headers();
           addSecurityHeaders(headers, null, {});
-          return new Response('Authentication failed', { status: 403, headers });
+          return new Response('User not found', { status: 403, headers });
         }
         
         if (isExpired(userData.expiration_date, userData.expiration_time)) {
           const headers = new Headers();
           addSecurityHeaders(headers, null, {});
-          return new Response('Authentication failed', { status: 403, headers });
+          return new Response('Account expired', { status: 403, headers });
         }
         
         if (userData.traffic_limit && userData.traffic_limit > 0 && 
             (userData.traffic_used || 0) >= userData.traffic_limit) {
           const headers = new Headers();
           addSecurityHeaders(headers, null, {});
-          return new Response('Authentication failed', { status: 403, headers });
+          return new Response('Traffic limit exceeded', { status: 403, headers });
         }
         
-        return await handleIpSubscription(request, core, uuid, url.hostname);
+        return await handleIpSubscription(core, uuid, url.hostname);
       };
 
       if (url.pathname.startsWith('/xray/')) {
@@ -1842,7 +4271,7 @@ export default {
         return await handleSubscription('sb');
       }
 
-      // رسیدگی به User Panel (با UUID در path)
+      // User Panel Handler - پنل کاربری با UUID در مسیر
       const path = url.pathname.slice(1);
       if (isValidUUID(path)) {
         const rateLimitKey = `user_path_rate:${clientIp}`;
@@ -1856,13 +4285,13 @@ export default {
         if (!userData) {
           const headers = new Headers();
           addSecurityHeaders(headers, null, {});
-          return new Response('Authentication failed', { status: 403, headers });
+          return new Response('User not found', { status: 403, headers });
         }
         
         return await handleUserPanel(request, path, url.hostname, cfg.proxyAddress, userData, clientIp);
       }
 
-      // Reverse Proxy (اگر ROOT_PROXY_URL تنظیم شده باشد)
+      // Reverse Proxy برای Root URL (اختیاری)
       if (env.ROOT_PROXY_URL) {
         try {
           let proxyUrl;
@@ -1891,13 +4320,27 @@ export default {
           
           newRequest.headers.set('Host', proxyUrl.hostname);
           newRequest.headers.set('X-Forwarded-For', clientIp);
+          newRequest.headers.set('X-Forwarded-Proto', targetUrl.protocol.replace(':', ''));
           newRequest.headers.set('X-Real-IP', clientIp);
           
           const response = await fetch(newRequest);
           const mutableHeaders = new Headers(response.headers);
           
+          mutableHeaders.delete('content-security-policy-report-only');
+          mutableHeaders.delete('x-frame-options');
+          
+          if (!mutableHeaders.has('Content-Security-Policy')) {
+            mutableHeaders.set('Content-Security-Policy', 
+              "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: *; frame-ancestors 'self';");
+          }
+          if (!mutableHeaders.has('X-Frame-Options')) {
+            mutableHeaders.set('X-Frame-Options', 'SAMEORIGIN');
+          }
+          if (!mutableHeaders.has('Strict-Transport-Security')) {
+            mutableHeaders.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+          }
+          
           mutableHeaders.set('alt-svc', 'h3=":443"; ma=0');
-          addSecurityHeaders(mutableHeaders, null, {});
           
           return new Response(response.body, {
             status: response.status,
@@ -1905,29 +4348,34 @@ export default {
             headers: mutableHeaders
           });
         } catch (e) {
-          console.error(`Reverse Proxy Error: ${e.message}`);
+          console.error(`Reverse Proxy Error: ${e.message}`, e.stack);
           const headers = new Headers();
           addSecurityHeaders(headers, null, {});
           return new Response(`Proxy error: ${e.message}`, { status: 502, headers });
         }
       }
 
-      // صفحه پیش‌فرض (Masquerade)
-      const masqueradeHtml = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Welcome to nginx!</title>
-          <style>
-            body { width: 35em; margin: 0 auto; font-family: Tahoma, Verdana, Arial, sans-serif; }
-          </style>
-        </head>
-        <body>
-          <h1>Welcome to nginx!</h1>
-          <p>If you see this page, the nginx web server is successfully installed and working.</p>
-        </body>
-        </html>
-      `;
+      // Masquerade Response - نمایش یک صفحه معمولی برای پنهان‌سازی
+      const masqueradeHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <title>Welcome to nginx!</title>
+  <style>
+    body { 
+      width: 35em; 
+      margin: 0 auto; 
+      font-family: Tahoma, Verdana, Arial, sans-serif; 
+      padding-top: 50px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Welcome to nginx!</h1>
+  <p>If you see this page, the nginx web server is successfully installed and working. Further configuration is required.</p>
+  <p>For online documentation and support please refer to <a href="http://nginx.org/">nginx.org</a>.</p>
+  <p><em>Thank you for using nginx.</em></p>
+</body>
+</html>`;
       const headers = new Headers({ 'Content-Type': 'text/html' });
       addSecurityHeaders(headers, null, {});
       return new Response(masqueradeHtml, { headers });
@@ -1939,4 +4387,19 @@ export default {
       return new Response('Internal Server Error', { status: 500, headers });
     }
   },
+
+  // Scheduled Handler برای Health Check خودکار
+  async scheduled(event, env, ctx) {
+    try {
+      console.log('Running scheduled health check...');
+      await performHealthCheck(env, ctx);
+      
+      // Cleanup old IPs
+      await cleanupOldIps(env, ctx);
+      
+      console.log('✓ Scheduled tasks completed successfully');
+    } catch (e) {
+      console.error('Scheduled task error:', e.message);
+    }
+  }
 };
