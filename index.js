@@ -1599,6 +1599,11 @@ const adminPanelHTML = `<!DOCTYPE html>
         <div class="stat-value" id="total-traffic">0 KB</div>
         <div class="stat-label">Total Traffic</div>
       </div>
+      <div class="stat-card">
+        <div class="stat-icon blue">🕐</div>
+        <div class="stat-value" style="font-size:16px;" id="server-time">--:--:--</div>
+        <div class="stat-label">Server Time</div>
+      </div>
       <div class="stat-card" id="proxy-health-card">
         <div class="stat-icon green">💚</div>
         <div class="stat-value" style="font-size: 22px;" id="proxy-health">Checking...</div>
@@ -1669,6 +1674,7 @@ const adminPanelHTML = `<!DOCTYPE html>
       <h2>👥 User Management</h2>
       <input type="text" id="searchInput" class="search-input" placeholder="🔍 Search by UUID or Notes...">
       <button id="deleteSelected" class="btn btn-danger" style="margin-bottom: 16px;">🗑️ Delete Selected</button>
+      <button id="exportUsers" class="btn btn-secondary" style="margin-left:10px;">📥 Export CSV</button>
       <div class="table-wrapper">
         <table>
           <thead>
@@ -2249,6 +2255,37 @@ const adminPanelHTML = `<!DOCTYPE html>
       });
       
       document.getElementById('deleteSelected').addEventListener('click', handleBulkDelete);
+      document.getElementById('exportUsers').addEventListener('click', function() {
+        if (allUsers.length === 0) {
+          showToast('No users to export', true);
+          return;
+        }
+        
+        const headers = ['UUID', 'Created At', 'Expiration Date', 'Expiration Time', 'Notes', 'Traffic Limit', 'Traffic Used', 'IP Limit'];
+        const csvContent = headers.join(',') + '\\n' + allUsers.map(user => {
+          return [
+            user.uuid,
+            user.created_at,
+            user.expiration_date,
+            user.expiration_time,
+            (user.notes || '').replace(/,/g, ';'),
+            user.traffic_limit || 'Unlimited',
+            user.traffic_used || 0,
+            user.ip_limit
+          ].map(val => '"' + String(val).replace(/"/g, '""') + '"').join(',');
+        }).join('\\n');
+        
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'users_export_' + new Date().toISOString().split('T')[0] + '.csv';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        showToast('✓ Users exported successfully!', false);
+      });
       document.getElementById('logoutBtn').addEventListener('click', handleLogout);
       document.getElementById('healthCheckBtn').addEventListener('click', handleHealthCheck);
 
@@ -2278,6 +2315,14 @@ const adminPanelHTML = `<!DOCTYPE html>
       updateProxyHealth(null, null);
       
       fetchAndRenderUsers();
+      function updateServerTime() {
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('en-US', { hour12: false });
+        const el = document.getElementById('server-time');
+        if (el) el.textContent = timeStr;
+      }
+      updateServerTime();
+      setInterval(updateServerTime, 1000);
       startAutoRefresh();
     });
   </script>
@@ -2870,6 +2915,7 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>User Panel — VLESS Configuration</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" integrity="sha512-CNgIRecGo7nphbeZ04Sc13ka07paqdeTu0WR1IM4kNcpmBAUSHSQX0FslNhTDadL4O5SAGapGt4FodqL8My0mA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <style nonce="CSP_NONCE_PLACEHOLDER">
     :root{
       --bg:#0b1220; --card:#0f1724; --muted:#9aa4b2; --accent:#3b82f6;
@@ -3022,20 +3068,26 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
       box-shadow:0 4px 15px rgba(59,130,246,0.2);
       transform:translateY(-2px);
     }
-    .btn.small{padding:9px 14px;font-size:13px}
+    .btn.small{padding:9px 14px;font-size:13px;transition:all 0.3s ease}
+    .btn.small:hover{transform:translateY(-2px)}
     .btn:active{transform:translateY(0) scale(0.97)}
     .btn:disabled{opacity:0.5;cursor:not-allowed;transform:none}
 
-    .qr-container{background:#fff;padding:16px;border-radius:10px;display:inline-block;box-shadow:0 4px 12px rgba(0,0,0,0.2);margin:16px auto;text-align:center}
-    #qr-display{min-height:280px;display:flex;align-items:center;justify-content:center;flex-direction:column}
+    .qr-container{background:linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);padding:20px;border-radius:16px;display:inline-block;box-shadow:0 8px 32px rgba(0,0,0,0.15), 0 0 0 1px rgba(255,255,255,0.1);margin:16px auto;text-align:center;transition:all 0.3s ease;border:2px solid rgba(59,130,246,0.1)}
+    .qr-container:hover{transform:translateY(-4px);box-shadow:0 16px 48px rgba(0,0,0,0.2), 0 0 30px rgba(59,130,246,0.15)}
+    #qr-display{min-height:280px;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:10px}
+    #qr-display img,#qr-display canvas{border-radius:8px;max-width:100%}
 
-    #toast{position:fixed;right:20px;top:20px;background:#0f1b2a;padding:14px 18px;
-      border-radius:10px;border:1px solid rgba(255,255,255,0.08);display:none;
-      color:#cfe8ff;box-shadow:0 8px 24px rgba(2,6,23,0.7);z-index:1000;min-width:200px}
-    #toast.show{display:block;animation:toastIn .3s ease}
-    #toast.success{border-left:4px solid var(--success)}
-    #toast.error{border-left:4px solid var(--danger)}
-    @keyframes toastIn{from{transform:translateY(-10px);opacity:0}to{transform:translateY(0);opacity:1}}
+    #toast{position:fixed;right:20px;top:20px;background:linear-gradient(135deg, rgba(15,27,42,0.98), rgba(10,20,35,0.95));
+      backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+      padding:16px 20px;border-radius:14px;border:1px solid rgba(255,255,255,0.08);display:none;
+      color:#cfe8ff;box-shadow:0 12px 40px rgba(2,6,23,0.7), 0 0 0 1px rgba(255,255,255,0.05);
+      z-index:1000;min-width:240px;max-width:350px;
+      transform:translateX(0);transition:all 0.3s cubic-bezier(0.4, 0, 0.2, 1)}
+    #toast.show{display:block;animation:toastIn .4s cubic-bezier(0.4, 0, 0.2, 1)}
+    #toast.success{border-left:4px solid var(--success);box-shadow:0 12px 40px rgba(2,6,23,0.7), 0 0 20px rgba(34,197,94,0.2)}
+    #toast.error{border-left:4px solid var(--danger);box-shadow:0 12px 40px rgba(2,6,23,0.7), 0 0 20px rgba(239,68,68,0.2)}
+    @keyframes toastIn{from{transform:translateX(100px);opacity:0}to{transform:translateX(0);opacity:1}}
 
     .section-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;
       padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.05)}
@@ -4034,26 +4086,52 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
     // ========================================================================
     
     function generateQRCode(text) {
-      try {
-        const container = document.getElementById('qr-display');
-        container.innerHTML = '<p class="muted">Generating QR code...</p>';
+      const container = document.getElementById('qr-display');
+      container.innerHTML = '';
+      
+      const loading = document.createElement('p');
+      loading.className = 'muted';
+      loading.textContent = 'Generating QR...';
+      container.appendChild(loading);
+
+      setTimeout(() => {
+        container.innerHTML = '';
         
-        setTimeout(() => {
-          try {
-            const canvas = QRCodeGenerator.generate(text, 280);
-            container.innerHTML = '';
-            container.appendChild(canvas);
-            showToast('✓ QR code generated successfully!', false);
-          } catch (err) {
-            container.innerHTML = '<p class="muted" style="color:var(--danger);">Failed to generate QR code</p>';
-            showToast('QR code generation failed', true);
-            console.error('QR generation error:', err);
+        try {
+          if (typeof QRCode !== 'undefined') {
+            new QRCode(container, {
+              text: text,
+              width: 256,
+              height: 256,
+              colorDark : "#000000",
+              colorLight : "#ffffff",
+              correctLevel : QRCode.CorrectLevel.M
+            });
+            showToast('✓ QR Generated (High Quality)', false);
+          } else {
+            try {
+              const canvas = QRCodeGenerator.generate(text, 256);
+              container.appendChild(canvas);
+              showToast('✓ QR Generated (Local)', false);
+            } catch (localErr) {
+              const img = document.createElement('img');
+              img.src = 'https://chart.googleapis.com/chart?cht=qr&chl=' + encodeURIComponent(text) + '&chs=250x250&choe=UTF-8&chld=M|0';
+              img.style.maxWidth = '100%';
+              img.alt = 'QR Code';
+              img.onerror = function() {
+                container.innerHTML = '<p style="color:var(--danger)">QR Generation Failed. Copy link manually.</p>';
+                showToast('Error generating QR', true);
+              };
+              container.appendChild(img);
+              showToast('✓ QR Generated (Cloud Fallback)', false);
+            }
           }
-        }, 100);
-      } catch (e) {
-        showToast('QR code generation failed', true);
-        console.error('QR error:', e);
-      }
+        } catch (e) {
+          console.error('QR Gen Error:', e);
+          container.innerHTML = '<p style="color:var(--danger)">QR Generation Failed. Copy link manually.</p>';
+          showToast('Error generating QR', true);
+        }
+      }, 50);
     }
 
     async function copyToClipboard(text, button) {
