@@ -15,6 +15,12 @@ local_protocol = "http"
 [vars]
 UUID = "d342d11e-d424-4583-b36e-524ab1f0afa4"
 PROXYIP = "nima.nscl.ir"
+ADMIN_KEY = "admin123"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "vless-proxy-db"
+database_id = "local-dev-database"
 
 # [build]
 # command = "npm run deploy"

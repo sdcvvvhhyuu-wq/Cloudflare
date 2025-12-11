@@ -855,6 +855,22 @@ async function ensureTablesExist(env, ctx) {
     
     const stmts = createTables.map(sql => env.DB.prepare(sql));
     await env.DB.batch(stmts);
+    
+    // Insert test user for development (with default UUID from config)
+    const testUUID = env.UUID || Config.userID;
+    const futureDate = new Date();
+    futureDate.setMonth(futureDate.getMonth() + 1);
+    const expDate = futureDate.toISOString().split('T')[0];
+    const expTime = '23:59:59';
+    
+    try {
+      await env.DB.prepare(
+        "INSERT OR IGNORE INTO users (uuid, expiration_date, expiration_time, notes, traffic_limit, traffic_used, ip_limit) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      ).bind(testUUID, expDate, expTime, 'Test User - Development', null, 1073741824, -1).run();
+    } catch (insertErr) {
+      // User may already exist - that's fine
+    }
+    
     console.log('✓ D1 tables initialized successfully');
   } catch (e) {
     console.error('Failed to create D1 tables:', e);
