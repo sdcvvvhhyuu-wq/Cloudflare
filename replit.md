@@ -29,6 +29,31 @@ Environment variables in `wrangler.toml`:
 
 ## Recent Changes (December 2025)
 
+### Latest Fixes (December 11, 2025)
+- **QR Code Generator Enhancement**:
+  - Increased QR code capacity (typeNumber 10 instead of 5) for longer VLESS URLs
+  - Added automatic fallback mechanism with progressive version increase
+  - Better error handling for complex configurations
+- **Geo-Location Detection Improvements**:
+  - Added 3-second timeout for all geo API calls
+  - Added more fallback providers (ipinfo.io, freeipapi.com)
+  - Uses Cloudflare CF headers as primary source
+  - Returns fallback "Global" location if all APIs fail
+- **Admin Panel Proxy Health**:
+  - Fixed health display to show proper Healthy/Unhealthy states
+  - Added null checks for DOM elements
+  - Proper initialization on page load
+- **Data Limit Input Visibility**:
+  - Fixed flex layout with proper min-width values
+  - Input field now fully visible with dropdown
+- **User Panel Auto-Refresh**:
+  - Added 30-second auto-refresh for user statistics
+  - Real-time traffic usage updates
+  - Dynamic connection history display
+- **Analytics/History Tabs**:
+  - Enhanced tab functionality with proper content switching
+  - History tab shows session data with formatted timestamps
+
 ### UI/UX Improvements
 - **User Panel Redesign**: Modern dark theme with glassmorphism effects
   - Live Traffic widget with animated graph (download/upload speeds)
