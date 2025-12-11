@@ -34,6 +34,8 @@ Environment variables in `wrangler.toml`:
 - **QR Code Generator Enhancement**:
   - 3-tier fallback system: Embedded/Local FIRST → CDN fallback → Google Charts API
   - Embedded generator works offline without external resources
+  - **Fixed critical bug**: Changed `=== null` to `== null` checks in QR generator (modules are undefined not null)
+  - **Fixed position adjustment patterns**: Added complete PATTERN_POSITIONS array for all QR versions (1-40)
   - Updated CSP headers to allow cdnjs.cloudflare.com, unpkg.com, and chart.googleapis.com
   - Cross-Origin-Embedder-Policy set to 'unsafe-none' for external image loading
   - Increased QR code capacity (typeNumber 10 instead of 5) for longer VLESS URLs
