@@ -46,6 +46,18 @@ Environment variables in `wrangler.toml`:
 - Fixed critical syntax error (duplicate formatBytes function on line 1503)
 - Fixed D1 database binding issues
 - Added automatic test user creation for development environment
+- **User Panel Button Fixes (December 2025)**:
+  - Migrated from inline onclick handlers to event delegation pattern
+  - Fixed JavaScript string escaping using JSON.stringify for window.CONFIG
+  - QR Code, Copy Link, Download Config, View Config buttons now work correctly
+- **Admin Panel Proxy Health Fix**:
+  - `/api/stats` endpoint now returns proxy health data from database
+  - `fetchStats()` function calls `updateProxyHealth()` to update status
+  - Proxy Health card no longer stuck on "Checking..."
+- **User API Endpoints Added**:
+  - `/api/user/:uuid` - Returns user data (traffic, expiry, limits)
+  - `/api/user/:uuid/analytics` - Returns analytics data
+  - `/api/user/:uuid/history` - Returns 7-day usage history
 
 ### Database
 - D1 database binding configured for local development
