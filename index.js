@@ -3705,18 +3705,18 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
       };
 
       const PROTOCOL_PATTERNS = {
-        VLESS: { pattern: /^vless:\/\//i, priority: 10, category: 'proxy' },
-        VMESS: { pattern: /^vmess:\/\//i, priority: 10, category: 'proxy' },
-        SHADOWSOCKS: { pattern: /^ss:\/\//i, priority: 9, category: 'proxy' },
-        TROJAN: { pattern: /^trojan:\/\//i, priority: 9, category: 'proxy' },
-        HYSTERIA2: { pattern: /^hy2:\/\//i, priority: 8, category: 'proxy' },
-        TUIC: { pattern: /^tuic:\/\//i, priority: 8, category: 'proxy' },
-        WIREGUARD: { pattern: /^wireguard:\/\//i, priority: 7, category: 'vpn' },
-        CLASH_CONFIG: { pattern: /^clash:\/\//i, priority: 6, category: 'config' },
-        JSON_CONFIG: { pattern: /^\s*[\{\[]/, priority: 4, category: 'config' },
-        BASE64_ENCODED: { pattern: /^[A-Za-z0-9+\/=]{40,}$/, priority: 3, category: 'encoded' },
-        HTTP_URL: { pattern: /^https?:\/\//i, priority: 2, category: 'url' },
-        PLAIN_TEXT: { pattern: /.*/, priority: 1, category: 'text' }
+        VLESS: { pattern: new RegExp('^vless:\\/\\/', 'i'), priority: 10, category: 'proxy' },
+        VMESS: { pattern: new RegExp('^vmess:\\/\\/', 'i'), priority: 10, category: 'proxy' },
+        SHADOWSOCKS: { pattern: new RegExp('^ss:\\/\\/', 'i'), priority: 9, category: 'proxy' },
+        TROJAN: { pattern: new RegExp('^trojan:\\/\\/', 'i'), priority: 9, category: 'proxy' },
+        HYSTERIA2: { pattern: new RegExp('^hy2:\\/\\/', 'i'), priority: 8, category: 'proxy' },
+        TUIC: { pattern: new RegExp('^tuic:\\/\\/', 'i'), priority: 8, category: 'proxy' },
+        WIREGUARD: { pattern: new RegExp('^wireguard:\\/\\/', 'i'), priority: 7, category: 'vpn' },
+        CLASH_CONFIG: { pattern: new RegExp('^clash:\\/\\/', 'i'), priority: 6, category: 'config' },
+        JSON_CONFIG: { pattern: new RegExp('^\\\\s*[\\\\{\\\\[]'), priority: 4, category: 'config' },
+        BASE64_ENCODED: { pattern: new RegExp('^[A-Za-z0-9+\\/=]{40,}$'), priority: 3, category: 'encoded' },
+        HTTP_URL: { pattern: new RegExp('^https?:\\/\\/', 'i'), priority: 2, category: 'url' },
+        PLAIN_TEXT: { pattern: new RegExp('.*'), priority: 1, category: 'text' }
       };
 
       function detectProtocol(text) {
@@ -3749,16 +3749,19 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
       function extractProtocolMetadata(text, protocolType) {
         const metadata = { protocol: protocolType };
         try {
-          if (/^(vless|vmess|ss|trojan|hysteria|hy2|tuic):\/\//i.test(text)) {
-            const match = text.match(/(?:\/\/)?([^@]*@)?([^:\/]+):?(\d+)?/);
+          const proxyRegex = new RegExp('^(vless|vmess|ss|trojan|hysteria|hy2|tuic):\\/\\/', 'i');
+          if (proxyRegex.test(text)) {
+            const match = text.match(new RegExp('(?:\\/\\/)?([^@]*@)?([^:\\/]+):?(\\\\d+)?'));
             if (match) {
               metadata.host = match[2];
               metadata.port = match[3] || 'unknown';
             }
             if (text.includes('?')) {
               metadata.hasParams = true;
-              const params = new URLSearchParams(text.split('?')[1]?.split('#')[0]);
-              metadata.paramCount = [...params].length;
+              try {
+                const params = new URLSearchParams(text.split('?')[1].split('#')[0]);
+                metadata.paramCount = Array.from(params).length;
+              } catch(e) { metadata.paramCount = 0; }
             }
           }
           if (protocolType === 'JSON_CONFIG') {
