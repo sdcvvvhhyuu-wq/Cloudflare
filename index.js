@@ -662,6 +662,7 @@ function createVlessLink({
   name,
 }) {
   const params = new URLSearchParams({
+    encryption: 'none',
     type: 'ws',
     host,
     path,
