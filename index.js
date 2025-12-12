@@ -3673,9 +3673,174 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
     setInterval(simulateLiveStats, 3000);
 
     // ========================================================================
-    // SELF-CONTAINED QR CODE GENERATOR (از اسکریپت دوم)
-    // Pure JavaScript - No external dependencies - 100% compatible
+    // QR CODE MANAGER PRO - ENTERPRISE EDITION v3.0
+    // AI-Powered Generation with Protocol Detection & Intelligent Optimization
     // ========================================================================
+    const QRCodeManagerPro = (function() {
+      'use strict';
+
+      const CONFIG = {
+        version: '3.0.0',
+        qrSize: 280,
+        exportSize: 1200,
+        maxRetries: 3,
+        retryDelay: 500,
+        compressionThreshold: 600,
+        errorCorrectionLevel: 'H'
+      };
+
+      const state = {
+        lastOriginalText: '',
+        lastOptimizedText: '',
+        lastGeneratedUrl: '',
+        detectedProtocol: null,
+        protocolMetadata: {},
+        optimizationLevel: 'NONE',
+        totalGenerated: 0,
+        totalOptimized: 0,
+        totalBytesSaved: 0,
+        generationHistory: [],
+        isGenerating: false,
+        currentProgress: 0
+      };
+
+      const PROTOCOL_PATTERNS = {
+        VLESS: { pattern: /^vless:\/\//i, priority: 10, category: 'proxy' },
+        VMESS: { pattern: /^vmess:\/\//i, priority: 10, category: 'proxy' },
+        SHADOWSOCKS: { pattern: /^ss:\/\//i, priority: 9, category: 'proxy' },
+        TROJAN: { pattern: /^trojan:\/\//i, priority: 9, category: 'proxy' },
+        HYSTERIA2: { pattern: /^hy2:\/\//i, priority: 8, category: 'proxy' },
+        TUIC: { pattern: /^tuic:\/\//i, priority: 8, category: 'proxy' },
+        WIREGUARD: { pattern: /^wireguard:\/\//i, priority: 7, category: 'vpn' },
+        CLASH_CONFIG: { pattern: /^clash:\/\//i, priority: 6, category: 'config' },
+        JSON_CONFIG: { pattern: /^\s*[\{\[]/, priority: 4, category: 'config' },
+        BASE64_ENCODED: { pattern: /^[A-Za-z0-9+\/=]{40,}$/, priority: 3, category: 'encoded' },
+        HTTP_URL: { pattern: /^https?:\/\//i, priority: 2, category: 'url' },
+        PLAIN_TEXT: { pattern: /.*/, priority: 1, category: 'text' }
+      };
+
+      function detectProtocol(text) {
+        if (!text || typeof text !== 'string') {
+          return { type: 'EMPTY', category: 'none', metadata: {}, complexity: 0 };
+        }
+        text = text.trim();
+        let detectedType = 'UNKNOWN';
+        let detectedCategory = 'text';
+        let maxPriority = 0;
+        for (const [name, config] of Object.entries(PROTOCOL_PATTERNS)) {
+          if (config.pattern.test(text) && config.priority > maxPriority) {
+            detectedType = name;
+            detectedCategory = config.category;
+            maxPriority = config.priority;
+          }
+        }
+        const metadata = extractProtocolMetadata(text, detectedType);
+        const complexity = calculateComplexityScore(text);
+        return {
+          type: detectedType,
+          category: detectedCategory,
+          metadata: metadata,
+          complexity: complexity,
+          length: text.length,
+          timestamp: Date.now()
+        };
+      }
+
+      function extractProtocolMetadata(text, protocolType) {
+        const metadata = { protocol: protocolType };
+        try {
+          if (/^(vless|vmess|ss|trojan|hysteria|hy2|tuic):\/\//i.test(text)) {
+            const match = text.match(/(?:\/\/)?([^@]*@)?([^:\/]+):?(\d+)?/);
+            if (match) {
+              metadata.host = match[2];
+              metadata.port = match[3] || 'unknown';
+            }
+            if (text.includes('?')) {
+              metadata.hasParams = true;
+              const params = new URLSearchParams(text.split('?')[1]?.split('#')[0]);
+              metadata.paramCount = [...params].length;
+            }
+          }
+          if (protocolType === 'JSON_CONFIG') {
+            try {
+              const parsed = JSON.parse(text);
+              metadata.isArray = Array.isArray(parsed);
+              metadata.keyCount = Object.keys(parsed).length;
+            } catch (e) {
+              metadata.parseError = true;
+            }
+          }
+        } catch (error) {
+          metadata.extractionError = error.message;
+        }
+        return metadata;
+      }
+
+      function calculateComplexityScore(text) {
+        const len = text.length;
+        const uniqueChars = new Set(text).size;
+        const entropy = uniqueChars / Math.max(len, 1);
+        let score = 0;
+        if (len > 2000) score = 100;
+        else if (len > 1500) score = 90;
+        else if (len > 1000) score = 75;
+        else if (len > 600) score = 50;
+        else if (len > 300) score = 25;
+        else score = 10;
+        score *= (0.5 + entropy);
+        if (text.trim().startsWith('{') || text.trim().startsWith('[')) {
+          score *= 1.3;
+        }
+        return Math.min(100, Math.round(score));
+      }
+
+      function optimizeQRPayload(originalText, detectionResult) {
+        let optimizedText = originalText;
+        let optimizationApplied = 'NONE';
+        let bytesSaved = 0;
+        const cfg = window.CONFIG || {};
+        const subXray = cfg.subXrayUrl || '';
+        const subSb = cfg.subSbUrl || '';
+
+        if (detectionResult.complexity >= 80 && detectionResult.category === 'proxy') {
+          if (subXray) {
+            optimizedText = 'v2rayng://install-config?url=' + encodeURIComponent(subXray);
+            optimizationApplied = 'INSTALL_LINK_XRAY';
+            bytesSaved = originalText.length - optimizedText.length;
+          }
+        }
+
+        if (optimizationApplied === 'NONE' && detectionResult.type === 'JSON_CONFIG') {
+          try {
+            const parsed = JSON.parse(originalText);
+            const minified = JSON.stringify(parsed);
+            if (minified.length < originalText.length) {
+              optimizedText = minified;
+              optimizationApplied = 'JSON_MINIFIED';
+              bytesSaved = originalText.length - minified.length;
+            }
+          } catch (e) {}
+        }
+
+        return {
+          original: originalText,
+          optimized: optimizedText,
+          strategy: optimizationApplied,
+          bytesSaved: Math.max(0, bytesSaved),
+          compressionRatio: optimizedText.length / originalText.length,
+          effectiveness: bytesSaved > 0 ? ((bytesSaved / originalText.length) * 100).toFixed(1) : 0
+        };
+      }
+
+      return {
+        detectProtocol,
+        optimizeQRPayload,
+        getState: () => state,
+        updateState: (key, value) => { state[key] = value; },
+        CONFIG
+      };
+    })();
+
     const QRCodeGenerator = (function() {
       const QRErrorCorrectLevel = { L: 1, M: 0, Q: 3, H: 2 };
       
@@ -4153,64 +4318,118 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
     })();
 
     // ========================================================================
-    // USER INTERFACE FUNCTIONS
+    // QR CODE MANAGER PRO - USER INTERFACE FUNCTIONS
+    // Enhanced with Protocol Detection, Optimization & Analytics
     // ========================================================================
     
     function generateQRCode(text) {
       const container = document.getElementById('qr-display');
       container.innerHTML = '';
       
-      const loading = document.createElement('p');
-      loading.className = 'muted';
-      loading.textContent = 'Generating QR...';
-      container.appendChild(loading);
+      const detection = QRCodeManagerPro.detectProtocol(text);
+      const optimization = QRCodeManagerPro.optimizeQRPayload(text, detection);
+      const finalText = optimization.optimized;
+      
+      QRCodeManagerPro.updateState('lastOriginalText', text);
+      QRCodeManagerPro.updateState('lastOptimizedText', finalText);
+      QRCodeManagerPro.updateState('detectedProtocol', detection.type);
+      
+      container.innerHTML = '<div class="qr-loading"><div class="qr-spinner"></div><p class="muted">Analyzing protocol & generating...</p></div>';
+      
+      const style = document.createElement('style');
+      style.textContent = '.qr-loading{text-align:center;padding:40px}.qr-spinner{width:40px;height:40px;border:3px solid rgba(59,130,246,0.2);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 16px}@keyframes spin{to{transform:rotate(360deg)}}.qr-info-panel{background:linear-gradient(135deg,rgba(59,130,246,0.1),rgba(168,85,247,0.1));border-radius:12px;padding:12px;margin-top:16px;font-size:11px}.qr-info-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05)}.qr-info-row:last-child{border-bottom:none}.qr-info-label{color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;font-weight:600}.qr-info-value{color:var(--accent-2);font-family:var(--mono)}.qr-badge{display:inline-block;padding:2px 8px;border-radius:8px;font-size:9px;font-weight:700;margin-left:6px}.qr-badge.high{background:rgba(34,197,94,0.2);color:#22c55e}.qr-badge.medium{background:rgba(245,158,11,0.2);color:#f59e0b}.qr-badge.low{background:rgba(239,68,68,0.2);color:#ef4444}.qr-container{background:#fff;padding:20px;border-radius:16px;display:inline-block;box-shadow:0 8px 32px rgba(0,0,0,0.3)}';
+      if (!document.getElementById('qr-pro-styles')) {
+        style.id = 'qr-pro-styles';
+        document.head.appendChild(style);
+      }
 
       setTimeout(() => {
         container.innerHTML = '';
         
+        let qrGenerated = false;
+        let methodUsed = '';
+        
         try {
-          const canvas = QRCodeGenerator.generate(text, 256);
-          container.appendChild(canvas);
-          showToast('✓ QR Generated (Embedded)', false);
+          const canvas = QRCodeGenerator.generate(finalText, 280);
+          const wrapper = document.createElement('div');
+          wrapper.className = 'qr-container';
+          wrapper.appendChild(canvas);
+          container.appendChild(wrapper);
+          qrGenerated = true;
+          methodUsed = 'Embedded Engine';
         } catch (embeddedErr) {
-          console.warn('Embedded QR failed, trying CDN fallback:', embeddedErr.message);
+          console.warn('Embedded QR failed:', embeddedErr.message);
           try {
             if (typeof QRCode !== 'undefined') {
-              new QRCode(container, {
-                text: text,
-                width: 256,
-                height: 256,
+              const wrapper = document.createElement('div');
+              wrapper.className = 'qr-container';
+              new QRCode(wrapper, {
+                text: finalText,
+                width: 280,
+                height: 280,
                 colorDark: "#000000",
                 colorLight: "#ffffff",
-                correctLevel: QRCode.CorrectLevel.M
+                correctLevel: QRCode.CorrectLevel.H
               });
-              showToast('✓ QR Generated (CDN)', false);
+              container.appendChild(wrapper);
+              qrGenerated = true;
+              methodUsed = 'CDN Library';
             } else {
-              throw new Error('CDN QRCode library not available');
+              throw new Error('CDN not available');
             }
           } catch (cdnErr) {
-            console.warn('CDN QR failed, trying Google Charts:', cdnErr.message);
-            try {
+            console.warn('CDN QR failed:', cdnErr.message);
+            const encodedText = encodeURIComponent(finalText);
+            if (encodedText.length < 1800) {
+              const wrapper = document.createElement('div');
+              wrapper.className = 'qr-container';
               const img = document.createElement('img');
-              img.src = 'https://chart.googleapis.com/chart?cht=qr&chl=' + encodeURIComponent(text) + '&chs=250x250&choe=UTF-8&chld=M|0';
-              img.style.maxWidth = '100%';
+              img.src = 'https://chart.googleapis.com/chart?cht=qr&chl=' + encodedText + '&chs=280x280&choe=UTF-8&chld=H|2';
+              img.style.cssText = 'display:block;width:280px;height:280px';
               img.alt = 'QR Code';
               img.onerror = function() {
-                container.innerHTML = '<p style="color:var(--danger)">All QR methods failed. Please copy the link manually.</p>';
-                showToast('QR generation failed - copy link instead', true);
+                container.innerHTML = '<div style="text-align:center;padding:30px"><p style="color:var(--danger);font-size:14px">QR generation failed</p><p class="muted" style="margin-top:8px">Please use the copy button instead</p></div>';
+                showToast('QR generation failed', true);
               };
               img.onload = function() {
-                showToast('✓ QR Generated (Cloud)', false);
+                showToast('✓ QR Generated [' + detection.type + ']', false);
               };
-              container.appendChild(img);
-            } catch (googleErr) {
-              console.error('All QR generation methods failed:', googleErr);
-              container.innerHTML = '<p style="color:var(--danger)">QR Generation Failed. Please copy the link manually.</p>';
-              showToast('QR generation failed - copy link instead', true);
+              wrapper.appendChild(img);
+              container.appendChild(wrapper);
+              qrGenerated = true;
+              methodUsed = 'Cloud API';
+            } else {
+              container.innerHTML = '<div style="text-align:center;padding:30px"><p style="color:var(--warning);font-size:14px">⚠️ Content too large for QR</p><p class="muted" style="margin-top:8px;font-size:12px">Use subscription link or copy config directly</p></div>';
+              showToast('Content too large for QR code', true);
+              return;
             }
           }
         }
-      }, 50);
+        
+        if (qrGenerated) {
+          const state = QRCodeManagerPro.getState();
+          state.totalGenerated++;
+          if (optimization.strategy !== 'NONE') {
+            state.totalOptimized++;
+            state.totalBytesSaved += optimization.bytesSaved;
+          }
+          
+          const compressionPercent = ((1 - optimization.compressionRatio) * 100).toFixed(1);
+          const badgeClass = compressionPercent > 30 ? 'high' : compressionPercent > 10 ? 'medium' : 'low';
+          
+          const infoPanel = document.createElement('div');
+          infoPanel.className = 'qr-info-panel';
+          infoPanel.innerHTML = 
+            '<div class="qr-info-row"><span class="qr-info-label">Protocol</span><span class="qr-info-value">' + detection.type + '</span></div>' +
+            '<div class="qr-info-row"><span class="qr-info-label">Original</span><span class="qr-info-value">' + text.length + ' bytes</span></div>' +
+            '<div class="qr-info-row"><span class="qr-info-label">Optimized</span><span class="qr-info-value">' + finalText.length + ' bytes</span></div>' +
+            '<div class="qr-info-row"><span class="qr-info-label">Optimization</span><span class="qr-info-value">' + optimization.strategy + '<span class="qr-badge ' + badgeClass + '">' + compressionPercent + '%</span></span></div>' +
+            '<div class="qr-info-row"><span class="qr-info-label">Engine</span><span class="qr-info-value">' + methodUsed + '</span></div>';
+          container.appendChild(infoPanel);
+          
+          showToast('✓ QR Generated [' + detection.type + '] ' + (optimization.strategy !== 'NONE' ? '| ' + optimization.strategy : ''), false);
+        }
+      }, 100);
     }
 
     async function copyToClipboard(text, button) {
