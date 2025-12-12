@@ -128,6 +128,8 @@ const CONST = {
   IP_CLEANUP_AGE_DAYS: 30,
   HEALTH_CHECK_INTERVAL: 300000, // 5 minutes
   HEALTH_CHECK_TIMEOUT: 5000,
+  TRAFFIC_UPDATE_INTERVAL: 3000,
+  TRAFFIC_BATCH_SIZE: 1024 * 1024,
 };
 
 // ============================================================================
@@ -210,8 +212,12 @@ function safeBase64Encode(str) {
     for (let i = 0; i < bytes.length; i++) {
       binary += String.fromCharCode(bytes[i]);
     }
-    return btoa(binary);
+    return btoa(binary)
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '');
   } catch (e) {
+    console.error('Base64 encode error:', e);
     return btoa(unescape(encodeURIComponent(str)));
   }
 }
@@ -365,14 +371,17 @@ async function updateUsage(env, uuid, bytes, ctx) {
   let lockAcquired = false;
   
   try {
-    // Acquire lock with timeout
-    while (!lockAcquired) {
+    // Acquire lock with timeout and retry logic
+    const maxRetries = 3;
+    let retries = 0;
+    while (!lockAcquired && retries < maxRetries) {
       const existingLock = await kvGet(env.DB, usageLockKey);
       if (!existingLock) {
         await kvPut(env.DB, usageLockKey, 'locked', { expirationTtl: 5 });
         lockAcquired = true;
       } else {
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 50));
+        retries++;
       }
     }
     
@@ -4627,7 +4636,7 @@ async function ProtocolOverWSHandler(request, config, env, ctx) {
       }
     };
 
-    const updateInterval = setInterval(deferredUsageUpdate, 10000); // هر 10 ثانیه
+    const updateInterval = setInterval(deferredUsageUpdate, 5000); // هر 5 ثانیه
 
     const finalCleanup = () => {
       clearInterval(updateInterval);
@@ -4646,6 +4655,10 @@ async function ProtocolOverWSHandler(request, config, env, ctx) {
         new WritableStream({
           async write(chunk, controller) {
             sessionUsage += chunk.byteLength;
+            
+            if (sessionUsage >= CONST.TRAFFIC_BATCH_SIZE) {
+              deferredUsageUpdate();
+            }
 
             if (udpStreamWriter) {
               return udpStreamWriter.write(chunk);
@@ -5309,7 +5322,7 @@ export default {
           return new Response(JSON.stringify({ error: 'Invalid UUID' }), { status: 400, headers });
         }
         
-        const userData = await getUserData(env, uuid, ctx);
+        const userData = await env.DB.prepare("SELECT * FROM users WHERE uuid = ?").bind(uuid).first();
         if (!userData) {
           return new Response(JSON.stringify({ error: 'User not found' }), { status: 404, headers });
         }
@@ -5318,8 +5331,17 @@ export default {
           traffic_used: userData.traffic_used || 0,
           traffic_limit: userData.traffic_limit,
           expiration_date: userData.expiration_date,
-          expiration_time: userData.expiration_time
-        }), { status: 200, headers });
+          expiration_time: userData.expiration_time,
+          is_expired: isExpired(userData.expiration_date, userData.expiration_time),
+          timestamp: Date.now()
+        }), { 
+          status: 200, 
+          headers: {
+            ...Object.fromEntries(headers),
+            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma': 'no-cache'
+          }
+        });
       }
 
       // Favicon redirect
