@@ -202,6 +202,20 @@ function escapeHTML(str) {
   })[m]);
 }
 
+function safeBase64Encode(str) {
+  try {
+    const encoder = new TextEncoder();
+    const bytes = encoder.encode(str);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  } catch (e) {
+    return btoa(unescape(encodeURIComponent(str)));
+  }
+}
+
 function generateUUID() {
   return crypto.randomUUID();
 }
@@ -580,29 +594,29 @@ function stringify(arr, offset = 0) {
 // SUBSCRIPTION LINK GENERATION - ترکیب از هر دو اسکریپت
 // ============================================================================
 
-function generateRandomPath(length = 12, query = '') {
+function generateRandomPath(length = 12) {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   let result = '';
   for (let i = 0; i < length; i++) {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-  return `/${result}${query ? `?${query}` : ''}`;
+  return `/${result}`;
 }
 
 const CORE_PRESETS = {
   xray: {
     tls: {
-      path: () => generateRandomPath(12, 'ed=2560'),
+      path: () => generateRandomPath(12),
       security: 'tls',
       fp: 'chrome',
       alpn: 'http/1.1',
-      extra: {},
+      extra: { ed: '2560' },
     },
     tcp: {
-      path: () => generateRandomPath(12, 'ed=2560'),
+      path: () => generateRandomPath(12),
       security: 'none',
       fp: 'chrome',
-      extra: {},
+      extra: { ed: '2560' },
     },
   },
   sb: {
@@ -813,7 +827,7 @@ async function handleIpSubscription(core, userID, hostName) {
   });
   addSecurityHeaders(headers, null, {});
 
-  return new Response(btoa(links.join('\n')), { headers });
+  return new Response(safeBase64Encode(links.join('\n')), { headers });
 }
 
 // ============================================================================
