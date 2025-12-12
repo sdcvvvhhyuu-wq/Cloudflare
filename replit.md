@@ -29,7 +29,15 @@ Environment variables in `wrangler.toml`:
 
 ## Recent Changes (December 2025)
 
-### Latest Fixes (December 11, 2025)
+### Latest Fixes (December 12, 2025)
+- **QR Code Decoding Fix for v2rayNG**:
+  - Fixed VLESS link generation - separated `ed` parameter from path to prevent double-encoding
+  - The path no longer includes `?ed=2560` which was causing URL encoding issues
+  - Added `safeBase64Encode` function for proper UTF-8 encoding of subscription links
+  - Updated `CORE_PRESETS` to add `ed: '2560'` as a separate query parameter
+  - QR codes now properly decode in v2rayNG without "Decoding failed" error
+
+### Previous Fixes (December 11, 2025)
 - **Wrangler v4 Upgrade**: Updated from v3.114.15 to v4.54.0 with compatibility date 2024-12-01
 - **QR Code Generator Enhancement**:
   - 3-tier fallback system: Embedded/Local FIRST → CDN fallback → Google Charts API
