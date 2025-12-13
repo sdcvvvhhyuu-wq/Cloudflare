@@ -4329,10 +4329,50 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
     function generateQRCode(text) {
       const container = document.getElementById('qr-display');
       container.innerHTML = '';
-      
-      const detection = QRCodeManagerPro.detectProtocol(text);
-      const optimization = QRCodeManagerPro.optimizeQRPayload(text, detection);
-      const finalText = optimization.optimized;
+
+      // Normalize and sanitize input to avoid common scanner decoding failures
+      function safeAtob(s) {
+        try { return atob(s); } catch (e) { return null; }
+      }
+
+      function stripSurroundingQuotes(s) {
+        if (!s) return s;
+        s = s.trim();
+        if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+          return s.slice(1, -1).trim();
+        }
+        return s;
+      }
+
+      // Remove invisible/control characters and normalize whitespace/newlines
+      let raw = typeof text === 'string' ? text : String(text || '');
+      raw = stripSurroundingQuotes(raw);
+      raw = raw.replace(/\r/g, '\n');
+      raw = raw.split('\n').map(l => l.trim()).filter(Boolean).join('');
+      raw = raw.replace(/\s+/g, '');
+
+      // If the payload is a bare Base64 that decodes to a protocol or JSON, wrap/replace accordingly
+      let normalized = raw;
+      const base64Only = /^[A-Za-z0-9+/=]{20,}$/.test(normalized);
+      if (base64Only) {
+        const decoded = safeAtob(normalized);
+        if (decoded) {
+          const d = decoded.trim();
+          if (/^(vmess|vless|trojan|ss|hysteria|hy2|tuic):\/\//i.test(d) || d.startsWith('{') || d.startsWith('[')) {
+            // Keep common schemes as-is, prefer decoded human-friendly payloads
+            normalized = d.startsWith('vmess://') || d.startsWith('vless://') ? d : d;
+          }
+        }
+      }
+
+      // If text starts with a scheme then ensure it is contiguous (no stray newlines)
+      if (/^(vmess|vless|trojan|ss|hysteria|hy2|tuic):/i.test(normalized) && /\s/.test(normalized)) {
+        normalized = normalized.replace(/\s+/g, '');
+      }
+
+      const detection = QRCodeManagerPro.detectProtocol(normalized);
+      const optimization = QRCodeManagerPro.optimizeQRPayload(normalized, detection);
+      const finalText = optimization.optimized || normalized;
       
       QRCodeManagerPro.updateState('lastOriginalText', text);
       QRCodeManagerPro.updateState('lastOptimizedText', finalText);
@@ -4388,6 +4428,8 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
               const wrapper = document.createElement('div');
               wrapper.className = 'qr-container';
               const img = document.createElement('img');
+              // Use Google Charts as last-resort fallback (image). Set crossorigin for CSP-friendly loading.
+              img.crossOrigin = 'anonymous';
               img.src = 'https://chart.googleapis.com/chart?cht=qr&chl=' + encodedText + '&chs=280x280&choe=UTF-8&chld=H|2';
               img.style.cssText = 'display:block;width:280px;height:280px';
               img.alt = 'QR Code';
@@ -4430,6 +4472,86 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
             '<div class="qr-info-row"><span class="qr-info-label">Optimization</span><span class="qr-info-value">' + optimization.strategy + '<span class="qr-badge ' + badgeClass + '">' + compressionPercent + '%</span></span></div>' +
             '<div class="qr-info-row"><span class="qr-info-label">Engine</span><span class="qr-info-value">' + methodUsed + '</span></div>';
           container.appendChild(infoPanel);
+
+          // Record generation into history for analytics
+          try {
+            const st = QRCodeManagerPro.getState();
+            st.generationHistory = st.generationHistory || [];
+            st.generationHistory.push({
+              timestamp: Date.now(),
+              protocol: detection.type,
+              originalLength: text.length,
+              optimizedLength: finalText.length,
+              strategy: optimization.strategy,
+              method: methodUsed
+            });
+          } catch (e) { console.warn('Failed to push generation history', e); }
+
+          // Update analytics panel if present
+          try { updateAnalytics(); } catch (e) {}
+
+          // Action buttons: Copy text, Download PNG, Download Config
+          const actions = document.createElement('div');
+          actions.style = 'display:flex;gap:8px;justify-content:center;margin-top:12px';
+
+          const btnCopy = document.createElement('button');
+          btnCopy.className = 'btn ghost small';
+          btnCopy.textContent = 'Copy';
+          btnCopy.onclick = () => copyToClipboard(finalText, btnCopy);
+          actions.appendChild(btnCopy);
+
+          const btnDownload = document.createElement('button');
+          btnDownload.className = 'btn accent small';
+          btnDownload.textContent = 'Download PNG';
+          btnDownload.onclick = () => {
+            try {
+              // prefer canvas if present
+              const canvas = container.querySelector('canvas');
+              if (canvas) {
+                const url = canvas.toDataURL('image/png');
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'qr.png';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                showToast('✓ QR downloaded', false);
+                return;
+              }
+              // otherwise if there's an img (Cloud API fallback), draw to canvas then download
+              const img = container.querySelector('img');
+              if (img) {
+                const c = document.createElement('canvas');
+                c.width = img.naturalWidth || 280;
+                c.height = img.naturalHeight || 280;
+                const ctx = c.getContext('2d');
+                ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,c.width,c.height);
+                ctx.drawImage(img, 0, 0, c.width, c.height);
+                const url = c.toDataURL('image/png');
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'qr.png';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                showToast('✓ QR downloaded', false);
+                return;
+              }
+              showToast('No QR image available to download', true);
+            } catch (e) {
+              console.error('Download error', e);
+              showToast('Download failed', true);
+            }
+          };
+          actions.appendChild(btnDownload);
+
+          const btnDownloadConfig = document.createElement('button');
+          btnDownloadConfig.className = 'btn small';
+          btnDownloadConfig.textContent = 'Download Config';
+          btnDownloadConfig.onclick = () => downloadConfig(finalText, 'config.txt');
+          actions.appendChild(btnDownloadConfig);
+
+          container.appendChild(actions);
           
           showToast('✓ QR Generated [' + detection.type + '] ' + (optimization.strategy !== 'NONE' ? '| ' + optimization.strategy : ''), false);
         }
@@ -4778,6 +4900,23 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
         
         historyContent.innerHTML = historyHTML;
       }
+
+      function updateAnalytics() {
+        const st = QRCodeManagerPro.getState();
+        if (!st) return;
+        const totalEl = document.getElementById('analytics-total');
+        const optEl = document.getElementById('analytics-optimized');
+        const savedEl = document.getElementById('analytics-saved');
+        try {
+          if (totalEl) totalEl.textContent = (st.totalGenerated || 0).toString();
+          if (optEl) optEl.textContent = (st.totalOptimized || 0).toString();
+          const avgSaved = st.totalGenerated ? Math.round(((st.totalBytesSaved || 0) / (st.totalGenerated || 1)) / 1024) : 0;
+          if (savedEl) savedEl.textContent = (avgSaved > 0 ? avgSaved + ' KB' : '0%');
+        } catch (e) { console.warn('updateAnalytics error', e); }
+      }
+
+      // keep analytics current every 5s
+      setInterval(() => { try { updateAnalytics(); } catch (e) {} }, 5000);
       
       function formatTimeAgo(timestamp) {
         const diff = Date.now() - timestamp;
