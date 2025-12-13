@@ -6,8 +6,7 @@
  * 
  * Combined Features:
  * - Advanced Admin Panel with Auto-Refresh
- * - User Panel with Self-Contained QR Code Generat
- or
+ * - User Panel with Self-Contained QR Code Generator
  * - Health Check & Auto-Switching System
  * - Scamalytics IP Reputation Check
  * - RASPS (Responsive Adaptive Smart Polling)
