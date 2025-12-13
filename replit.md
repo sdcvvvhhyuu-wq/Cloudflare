@@ -29,7 +29,15 @@ Environment variables in `wrangler.toml`:
 
 ## Recent Changes (December 2025)
 
-### Latest Fixes (December 12, 2025)
+### Latest Fixes (December 13, 2025)
+- **QR Code Critical Bug Fixes for v2rayNG**:
+  - Fixed QR code length encoding bug: now uses 16 bits for QR versions 10+ (was incorrectly using 8 bits)
+  - Replaced manual UTF-8 encoding with proper TextEncoder API for reliable byte conversion
+  - Removed problematic "optimization" that was converting VLESS URLs to invalid `v2rayng://install-config` format
+  - QR codes now contain raw VLESS URLs that v2rayNG can decode directly
+  - Fixed "Scan Result is empty" and "Decoding failed" errors when scanning QR codes
+
+### Previous Fixes (December 12, 2025)
 - **QR Code Decoding Fix for v2rayNG**:
   - Fixed VLESS link generation - separated `ed` parameter from path to prevent double-encoding
   - The path no longer includes `?ed=2560` which was causing URL encoding issues
