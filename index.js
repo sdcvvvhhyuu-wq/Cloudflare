@@ -4611,61 +4611,72 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
     }
 
     // ========================================================================
-    // EVENT DELEGATION FOR USER PANEL BUTTONS
+    // EVENT DELEGATION FOR USER PANEL BUTTONS (robust)
     // ========================================================================
     document.addEventListener('click', function(e) {
-      const btn = e.target.closest('[data-action]');
-      if (!btn) return;
-      
-      const action = btn.dataset.action;
-      
-      switch (action) {
-        case 'refresh':
-          location.reload();
-          break;
-          
-        case 'copy': {
-          const urlType = btn.dataset.url;
-          const url = urlType === 'xray' ? window.CONFIG.subXrayUrl : window.CONFIG.subSbUrl;
-          copyToClipboard(url, btn);
-          break;
-        }
-        
-        case 'copy-config': {
-          const configType = btn.dataset.config;
-          const config = configType === 'xray' ? window.CONFIG.singleXrayConfig : window.CONFIG.singleSingboxConfig;
-          copyToClipboard(config, btn);
-          break;
-        }
-        
-        case 'qr': {
-          const configType = btn.dataset.config;
-          let text;
-          if (configType === 'xray') {
-            text = window.CONFIG.singleXrayConfig;
-          } else if (configType === 'singbox') {
-            text = window.CONFIG.singleSingboxConfig;
+      try {
+        // Normalize target to an Element (handle text nodes)
+        let el = e.target;
+        while (el && el.nodeType !== 1) el = el.parentNode;
+        if (!el) return;
+
+        const btn = el.closest ? el.closest('[data-action]') : (function find(elm){ while(elm){ if(elm.getAttribute && elm.getAttribute('data-action')) return elm; elm = elm.parentNode; } return null; })(el);
+        if (!btn) return;
+
+        const action = btn.dataset.action;
+
+        switch (action) {
+          case 'refresh':
+            location.reload();
+            break;
+
+          case 'copy': {
+            const urlType = btn.dataset.url;
+            const url = (window.CONFIG && urlType === 'xray') ? window.CONFIG.subXrayUrl : (window.CONFIG ? window.CONFIG.subSbUrl : null);
+            if (!url) return showToast('URL not available', true);
+            copyToClipboard(url, btn);
+            break;
           }
-          if (text) generateQRCode(text);
-          break;
-        }
-        
-        case 'toggle': {
-          const targetId = btn.dataset.target;
-          const target = document.getElementById(targetId);
-          if (target) target.classList.toggle('hidden');
-          break;
-        }
-        
-        case 'download': {
-          const type = btn.dataset.type;
-          if (type === 'xray') {
-            downloadConfig(window.CONFIG.singleXrayConfig, 'xray-config.txt');
-          } else if (type === 'singbox') {
-            downloadConfig(window.CONFIG.singleSingboxConfig, 'singbox-config.txt');
+
+          case 'copy-config': {
+            const configType = btn.dataset.config;
+            const config = window.CONFIG ? (configType === 'xray' ? window.CONFIG.singleXrayConfig : window.CONFIG.singleSingboxConfig) : null;
+            if (!config) return showToast('Config not available', true);
+            copyToClipboard(config, btn);
+            break;
           }
-          break;
+
+          case 'qr': {
+            const configType = btn.dataset.config;
+            let text = null;
+            if (configType === 'xray' && window.CONFIG) text = window.CONFIG.singleXrayConfig;
+            else if (configType === 'singbox' && window.CONFIG) text = window.CONFIG.singleSingboxConfig;
+            if (!text) return showToast('Config unavailable for QR', true);
+            generateQRCode(text);
+            break;
+          }
+
+          case 'toggle': {
+            const targetId = btn.dataset.target;
+            const target = document.getElementById(targetId);
+            if (target) target.classList.toggle('hidden');
+            break;
+          }
+
+          case 'download': {
+            const type = btn.dataset.type;
+            if (!window.CONFIG) return showToast('Config unavailable', true);
+            if (type === 'xray') {
+              downloadConfig(window.CONFIG.singleXrayConfig, 'xray-config.txt');
+            } else if (type === 'singbox') {
+              downloadConfig(window.CONFIG.singleSingboxConfig, 'singbox-config.txt');
+            }
+            break;
+          }
         }
+      } catch (err) {
+        console.error('User panel click handler error:', err);
+        showToast('An unexpected error occurred', true);
       }
     });
 
