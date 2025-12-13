@@ -128,8 +128,6 @@ const CONST = {
   IP_CLEANUP_AGE_DAYS: 30,
   HEALTH_CHECK_INTERVAL: 300000, // 5 minutes
   HEALTH_CHECK_TIMEOUT: 5000,
-  TRAFFIC_UPDATE_INTERVAL: 3000,
-  TRAFFIC_BATCH_SIZE: 1024 * 1024,
 };
 
 // ============================================================================
@@ -212,12 +210,8 @@ function safeBase64Encode(str) {
     for (let i = 0; i < bytes.length; i++) {
       binary += String.fromCharCode(bytes[i]);
     }
-    return btoa(binary)
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=/g, '');
+    return btoa(binary);
   } catch (e) {
-    console.error('Base64 encode error:', e);
     return btoa(unescape(encodeURIComponent(str)));
   }
 }
@@ -371,17 +365,14 @@ async function updateUsage(env, uuid, bytes, ctx) {
   let lockAcquired = false;
   
   try {
-    // Acquire lock with timeout and retry logic
-    const maxRetries = 3;
-    let retries = 0;
-    while (!lockAcquired && retries < maxRetries) {
+    // Acquire lock with timeout
+    while (!lockAcquired) {
       const existingLock = await kvGet(env.DB, usageLockKey);
       if (!existingLock) {
         await kvPut(env.DB, usageLockKey, 'locked', { expirationTtl: 5 });
         lockAcquired = true;
       } else {
-        await new Promise(resolve => setTimeout(resolve, 50));
-        retries++;
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
     
@@ -3673,174 +3664,9 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
     setInterval(simulateLiveStats, 3000);
 
     // ========================================================================
-    // QR CODE MANAGER PRO - ENTERPRISE EDITION v3.0
-    // AI-Powered Generation with Protocol Detection & Intelligent Optimization
+    // SELF-CONTAINED QR CODE GENERATOR (از اسکریپت دوم)
+    // Pure JavaScript - No external dependencies - 100% compatible
     // ========================================================================
-    const QRCodeManagerPro = (function() {
-      'use strict';
-
-      const CONFIG = {
-        version: '3.0.0',
-        qrSize: 280,
-        exportSize: 1200,
-        maxRetries: 3,
-        retryDelay: 500,
-        compressionThreshold: 600,
-        errorCorrectionLevel: 'H'
-      };
-
-      const state = {
-        lastOriginalText: '',
-        lastOptimizedText: '',
-        lastGeneratedUrl: '',
-        detectedProtocol: null,
-        protocolMetadata: {},
-        optimizationLevel: 'NONE',
-        totalGenerated: 0,
-        totalOptimized: 0,
-        totalBytesSaved: 0,
-        generationHistory: [],
-        isGenerating: false,
-        currentProgress: 0
-      };
-
-      const PROTOCOL_PATTERNS = {
-        VLESS: { pattern: new RegExp('^vless:\\/\\/', 'i'), priority: 10, category: 'proxy' },
-        VMESS: { pattern: new RegExp('^vmess:\\/\\/', 'i'), priority: 10, category: 'proxy' },
-        SHADOWSOCKS: { pattern: new RegExp('^ss:\\/\\/', 'i'), priority: 9, category: 'proxy' },
-        TROJAN: { pattern: new RegExp('^trojan:\\/\\/', 'i'), priority: 9, category: 'proxy' },
-        HYSTERIA2: { pattern: new RegExp('^hy2:\\/\\/', 'i'), priority: 8, category: 'proxy' },
-        TUIC: { pattern: new RegExp('^tuic:\\/\\/', 'i'), priority: 8, category: 'proxy' },
-        WIREGUARD: { pattern: new RegExp('^wireguard:\\/\\/', 'i'), priority: 7, category: 'vpn' },
-        CLASH_CONFIG: { pattern: new RegExp('^clash:\\/\\/', 'i'), priority: 6, category: 'config' },
-        JSON_CONFIG: { pattern: new RegExp('^\\\\s*[\\\\{\\\\[]'), priority: 4, category: 'config' },
-        BASE64_ENCODED: { pattern: new RegExp('^[A-Za-z0-9+\\/=]{40,}$'), priority: 3, category: 'encoded' },
-        HTTP_URL: { pattern: new RegExp('^https?:\\/\\/', 'i'), priority: 2, category: 'url' },
-        PLAIN_TEXT: { pattern: new RegExp('.*'), priority: 1, category: 'text' }
-      };
-
-      function detectProtocol(text) {
-        if (!text || typeof text !== 'string') {
-          return { type: 'EMPTY', category: 'none', metadata: {}, complexity: 0 };
-        }
-        text = text.trim();
-        let detectedType = 'UNKNOWN';
-        let detectedCategory = 'text';
-        let maxPriority = 0;
-        for (const [name, config] of Object.entries(PROTOCOL_PATTERNS)) {
-          if (config.pattern.test(text) && config.priority > maxPriority) {
-            detectedType = name;
-            detectedCategory = config.category;
-            maxPriority = config.priority;
-          }
-        }
-        const metadata = extractProtocolMetadata(text, detectedType);
-        const complexity = calculateComplexityScore(text);
-        return {
-          type: detectedType,
-          category: detectedCategory,
-          metadata: metadata,
-          complexity: complexity,
-          length: text.length,
-          timestamp: Date.now()
-        };
-      }
-
-      function extractProtocolMetadata(text, protocolType) {
-        const metadata = { protocol: protocolType };
-        try {
-          const proxyRegex = new RegExp('^(vless|vmess|ss|trojan|hysteria|hy2|tuic):\\/\\/', 'i');
-          if (proxyRegex.test(text)) {
-            const match = text.match(new RegExp('(?:\\/\\/)?([^@]*@)?([^:\\/]+):?(\\\\d+)?'));
-            if (match) {
-              metadata.host = match[2];
-              metadata.port = match[3] || 'unknown';
-            }
-            if (text.includes('?')) {
-              metadata.hasParams = true;
-              try {
-                const params = new URLSearchParams(text.split('?')[1].split('#')[0]);
-                metadata.paramCount = Array.from(params).length;
-              } catch(e) { metadata.paramCount = 0; }
-            }
-          }
-          if (protocolType === 'JSON_CONFIG') {
-            try {
-              const parsed = JSON.parse(text);
-              metadata.isArray = Array.isArray(parsed);
-              metadata.keyCount = Object.keys(parsed).length;
-            } catch (e) {
-              metadata.parseError = true;
-            }
-          }
-        } catch (error) {
-          metadata.extractionError = error.message;
-        }
-        return metadata;
-      }
-
-      function calculateComplexityScore(text) {
-        const len = text.length;
-        const uniqueChars = new Set(text).size;
-        const entropy = uniqueChars / Math.max(len, 1);
-        let score = 0;
-        if (len > 2000) score = 100;
-        else if (len > 1500) score = 90;
-        else if (len > 1000) score = 75;
-        else if (len > 600) score = 50;
-        else if (len > 300) score = 25;
-        else score = 10;
-        score *= (0.5 + entropy);
-        if (text.trim().startsWith('{') || text.trim().startsWith('[')) {
-          score *= 1.3;
-        }
-        return Math.min(100, Math.round(score));
-      }
-
-      function optimizeQRPayload(originalText, detectionResult) {
-        let optimizedText = originalText;
-        let optimizationApplied = 'NONE';
-        let bytesSaved = 0;
-
-        if (detectionResult.category === 'proxy') {
-          optimizedText = originalText.trim();
-          if (optimizedText.length < originalText.length) {
-            optimizationApplied = 'TRIMMED';
-            bytesSaved = originalText.length - optimizedText.length;
-          }
-        }
-
-        if (optimizationApplied === 'NONE' && detectionResult.type === 'JSON_CONFIG') {
-          try {
-            const parsed = JSON.parse(originalText);
-            const minified = JSON.stringify(parsed);
-            if (minified.length < originalText.length) {
-              optimizedText = minified;
-              optimizationApplied = 'JSON_MINIFIED';
-              bytesSaved = originalText.length - minified.length;
-            }
-          } catch (e) {}
-        }
-
-        return {
-          original: originalText,
-          optimized: optimizedText,
-          strategy: optimizationApplied,
-          bytesSaved: Math.max(0, bytesSaved),
-          compressionRatio: optimizedText.length / originalText.length,
-          effectiveness: bytesSaved > 0 ? ((bytesSaved / originalText.length) * 100).toFixed(1) : 0
-        };
-      }
-
-      return {
-        detectProtocol,
-        optimizeQRPayload,
-        getState: () => state,
-        updateState: (key, value) => { state[key] = value; },
-        CONFIG
-      };
-    })();
-
     const QRCodeGenerator = (function() {
       const QRErrorCorrectLevel = { L: 1, M: 0, Q: 3, H: 2 };
       
@@ -4171,16 +3997,12 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
           }
         }
         
-        const lengthBits = typeNumber >= 10 ? 16 : 8;
-        
         for (let i = 0; i < dataList.length; i++) {
           const data = dataList[i];
-          const encoder = new TextEncoder();
-          const bytes = encoder.encode(data.data);
           put(4, 4);
-          put(bytes.length, lengthBits);
-          for (let j = 0; j < bytes.length; j++) {
-            put(bytes[j], 8);
+          put(data.data.length, 8);
+          for (let j = 0; j < data.data.length; j++) {
+            put(data.data.charCodeAt(j), 8);
           }
         }
         
@@ -4322,240 +4144,64 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
     })();
 
     // ========================================================================
-    // QR CODE MANAGER PRO - USER INTERFACE FUNCTIONS
-    // Enhanced with Protocol Detection, Optimization & Analytics
+    // USER INTERFACE FUNCTIONS
     // ========================================================================
     
     function generateQRCode(text) {
       const container = document.getElementById('qr-display');
       container.innerHTML = '';
-
-      // Normalize and sanitize input to avoid common scanner decoding failures
-      function safeAtob(s) {
-        try { return atob(s); } catch (e) { return null; }
-      }
-
-      function stripSurroundingQuotes(s) {
-        if (!s) return s;
-        s = s.trim();
-        if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
-          return s.slice(1, -1).trim();
-        }
-        return s;
-      }
-
-      // Remove invisible/control characters and normalize whitespace/newlines
-      let raw = typeof text === 'string' ? text : String(text || '');
-      raw = stripSurroundingQuotes(raw);
-      raw = raw.replace(/\r/g, '\n');
-      raw = raw.split('\n').map(l => l.trim()).filter(Boolean).join('');
-      raw = raw.replace(/\s+/g, '');
-
-      // If the payload is a bare Base64 that decodes to a protocol or JSON, wrap/replace accordingly
-      let normalized = raw;
-      const base64Only = /^[A-Za-z0-9+/=]{20,}$/.test(normalized);
-      if (base64Only) {
-        const decoded = safeAtob(normalized);
-        if (decoded) {
-          const d = decoded.trim();
-          if (/^(vmess|vless|trojan|ss|hysteria|hy2|tuic):\/\//i.test(d) || d.startsWith('{') || d.startsWith('[')) {
-            // Keep common schemes as-is, prefer decoded human-friendly payloads
-            normalized = d.startsWith('vmess://') || d.startsWith('vless://') ? d : d;
-          }
-        }
-      }
-
-      // If text starts with a scheme then ensure it is contiguous (no stray newlines)
-      if (/^(vmess|vless|trojan|ss|hysteria|hy2|tuic):/i.test(normalized) && /\s/.test(normalized)) {
-        normalized = normalized.replace(/\s+/g, '');
-      }
-
-      const detection = QRCodeManagerPro.detectProtocol(normalized);
-      const optimization = QRCodeManagerPro.optimizeQRPayload(normalized, detection);
-      const finalText = optimization.optimized || normalized;
       
-      QRCodeManagerPro.updateState('lastOriginalText', text);
-      QRCodeManagerPro.updateState('lastOptimizedText', finalText);
-      QRCodeManagerPro.updateState('detectedProtocol', detection.type);
-      
-      container.innerHTML = '<div class="qr-loading"><div class="qr-spinner"></div><p class="muted">Analyzing protocol & generating...</p></div>';
-      
-      const style = document.createElement('style');
-      style.textContent = '.qr-loading{text-align:center;padding:40px}.qr-spinner{width:40px;height:40px;border:3px solid rgba(59,130,246,0.2);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 16px}@keyframes spin{to{transform:rotate(360deg)}}.qr-info-panel{background:linear-gradient(135deg,rgba(59,130,246,0.1),rgba(168,85,247,0.1));border-radius:12px;padding:12px;margin-top:16px;font-size:11px}.qr-info-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05)}.qr-info-row:last-child{border-bottom:none}.qr-info-label{color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;font-weight:600}.qr-info-value{color:var(--accent-2);font-family:var(--mono)}.qr-badge{display:inline-block;padding:2px 8px;border-radius:8px;font-size:9px;font-weight:700;margin-left:6px}.qr-badge.high{background:rgba(34,197,94,0.2);color:#22c55e}.qr-badge.medium{background:rgba(245,158,11,0.2);color:#f59e0b}.qr-badge.low{background:rgba(239,68,68,0.2);color:#ef4444}.qr-container{background:#fff;padding:20px;border-radius:16px;display:inline-block;box-shadow:0 8px 32px rgba(0,0,0,0.3)}';
-      if (!document.getElementById('qr-pro-styles')) {
-        style.id = 'qr-pro-styles';
-        document.head.appendChild(style);
-      }
+      const loading = document.createElement('p');
+      loading.className = 'muted';
+      loading.textContent = 'Generating QR...';
+      container.appendChild(loading);
 
       setTimeout(() => {
         container.innerHTML = '';
         
-        let qrGenerated = false;
-        let methodUsed = '';
-        
         try {
-          const canvas = QRCodeGenerator.generate(finalText, 280);
-          const wrapper = document.createElement('div');
-          wrapper.className = 'qr-container';
-          wrapper.appendChild(canvas);
-          container.appendChild(wrapper);
-          qrGenerated = true;
-          methodUsed = 'Embedded Engine';
+          const canvas = QRCodeGenerator.generate(text, 256);
+          container.appendChild(canvas);
+          showToast('✓ QR Generated (Embedded)', false);
         } catch (embeddedErr) {
-          console.warn('Embedded QR failed:', embeddedErr.message);
+          console.warn('Embedded QR failed, trying CDN fallback:', embeddedErr.message);
           try {
             if (typeof QRCode !== 'undefined') {
-              const wrapper = document.createElement('div');
-              wrapper.className = 'qr-container';
-              new QRCode(wrapper, {
-                text: finalText,
-                width: 280,
-                height: 280,
+              new QRCode(container, {
+                text: text,
+                width: 256,
+                height: 256,
                 colorDark: "#000000",
                 colorLight: "#ffffff",
-                correctLevel: QRCode.CorrectLevel.H
+                correctLevel: QRCode.CorrectLevel.M
               });
-              container.appendChild(wrapper);
-              qrGenerated = true;
-              methodUsed = 'CDN Library';
+              showToast('✓ QR Generated (CDN)', false);
             } else {
-              throw new Error('CDN not available');
+              throw new Error('CDN QRCode library not available');
             }
           } catch (cdnErr) {
-            console.warn('CDN QR failed:', cdnErr.message);
-            const encodedText = encodeURIComponent(finalText);
-            if (encodedText.length < 1800) {
-              const wrapper = document.createElement('div');
-              wrapper.className = 'qr-container';
+            console.warn('CDN QR failed, trying Google Charts:', cdnErr.message);
+            try {
               const img = document.createElement('img');
-              // Use Google Charts as last-resort fallback (image). Set crossorigin for CSP-friendly loading.
-              img.crossOrigin = 'anonymous';
-              img.src = 'https://chart.googleapis.com/chart?cht=qr&chl=' + encodedText + '&chs=280x280&choe=UTF-8&chld=H|2';
-              img.style.cssText = 'display:block;width:280px;height:280px';
+              img.src = 'https://chart.googleapis.com/chart?cht=qr&chl=' + encodeURIComponent(text) + '&chs=250x250&choe=UTF-8&chld=M|0';
+              img.style.maxWidth = '100%';
               img.alt = 'QR Code';
               img.onerror = function() {
-                container.innerHTML = '<div style="text-align:center;padding:30px"><p style="color:var(--danger);font-size:14px">QR generation failed</p><p class="muted" style="margin-top:8px">Please use the copy button instead</p></div>';
-                showToast('QR generation failed', true);
+                container.innerHTML = '<p style="color:var(--danger)">All QR methods failed. Please copy the link manually.</p>';
+                showToast('QR generation failed - copy link instead', true);
               };
               img.onload = function() {
-                showToast('✓ QR Generated [' + detection.type + ']', false);
+                showToast('✓ QR Generated (Cloud)', false);
               };
-              wrapper.appendChild(img);
-              container.appendChild(wrapper);
-              qrGenerated = true;
-              methodUsed = 'Cloud API';
-            } else {
-              container.innerHTML = '<div style="text-align:center;padding:30px"><p style="color:var(--warning);font-size:14px">⚠️ Content too large for QR</p><p class="muted" style="margin-top:8px;font-size:12px">Use subscription link or copy config directly</p></div>';
-              showToast('Content too large for QR code', true);
-              return;
+              container.appendChild(img);
+            } catch (googleErr) {
+              console.error('All QR generation methods failed:', googleErr);
+              container.innerHTML = '<p style="color:var(--danger)">QR Generation Failed. Please copy the link manually.</p>';
+              showToast('QR generation failed - copy link instead', true);
             }
           }
         }
-        
-        if (qrGenerated) {
-          const state = QRCodeManagerPro.getState();
-          state.totalGenerated++;
-          if (optimization.strategy !== 'NONE') {
-            state.totalOptimized++;
-            state.totalBytesSaved += optimization.bytesSaved;
-          }
-          
-          const compressionPercent = ((1 - optimization.compressionRatio) * 100).toFixed(1);
-          const badgeClass = compressionPercent > 30 ? 'high' : compressionPercent > 10 ? 'medium' : 'low';
-          
-          const infoPanel = document.createElement('div');
-          infoPanel.className = 'qr-info-panel';
-          infoPanel.innerHTML = 
-            '<div class="qr-info-row"><span class="qr-info-label">Protocol</span><span class="qr-info-value">' + detection.type + '</span></div>' +
-            '<div class="qr-info-row"><span class="qr-info-label">Original</span><span class="qr-info-value">' + text.length + ' bytes</span></div>' +
-            '<div class="qr-info-row"><span class="qr-info-label">Optimized</span><span class="qr-info-value">' + finalText.length + ' bytes</span></div>' +
-            '<div class="qr-info-row"><span class="qr-info-label">Optimization</span><span class="qr-info-value">' + optimization.strategy + '<span class="qr-badge ' + badgeClass + '">' + compressionPercent + '%</span></span></div>' +
-            '<div class="qr-info-row"><span class="qr-info-label">Engine</span><span class="qr-info-value">' + methodUsed + '</span></div>';
-          container.appendChild(infoPanel);
-
-          // Record generation into history for analytics
-          try {
-            const st = QRCodeManagerPro.getState();
-            st.generationHistory = st.generationHistory || [];
-            st.generationHistory.push({
-              timestamp: Date.now(),
-              protocol: detection.type,
-              originalLength: text.length,
-              optimizedLength: finalText.length,
-              strategy: optimization.strategy,
-              method: methodUsed
-            });
-          } catch (e) { console.warn('Failed to push generation history', e); }
-
-          // Update analytics panel if present
-          try { updateAnalytics(); } catch (e) {}
-
-          // Action buttons: Copy text, Download PNG, Download Config
-          const actions = document.createElement('div');
-          actions.style = 'display:flex;gap:8px;justify-content:center;margin-top:12px';
-
-          const btnCopy = document.createElement('button');
-          btnCopy.className = 'btn ghost small';
-          btnCopy.textContent = 'Copy';
-          btnCopy.onclick = () => copyToClipboard(finalText, btnCopy);
-          actions.appendChild(btnCopy);
-
-          const btnDownload = document.createElement('button');
-          btnDownload.className = 'btn accent small';
-          btnDownload.textContent = 'Download PNG';
-          btnDownload.onclick = () => {
-            try {
-              // prefer canvas if present
-              const canvas = container.querySelector('canvas');
-              if (canvas) {
-                const url = canvas.toDataURL('image/png');
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'qr.png';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                showToast('✓ QR downloaded', false);
-                return;
-              }
-              // otherwise if there's an img (Cloud API fallback), draw to canvas then download
-              const img = container.querySelector('img');
-              if (img) {
-                const c = document.createElement('canvas');
-                c.width = img.naturalWidth || 280;
-                c.height = img.naturalHeight || 280;
-                const ctx = c.getContext('2d');
-                ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,c.width,c.height);
-                ctx.drawImage(img, 0, 0, c.width, c.height);
-                const url = c.toDataURL('image/png');
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'qr.png';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                showToast('✓ QR downloaded', false);
-                return;
-              }
-              showToast('No QR image available to download', true);
-            } catch (e) {
-              console.error('Download error', e);
-              showToast('Download failed', true);
-            }
-          };
-          actions.appendChild(btnDownload);
-
-          const btnDownloadConfig = document.createElement('button');
-          btnDownloadConfig.className = 'btn small';
-          btnDownloadConfig.textContent = 'Download Config';
-          btnDownloadConfig.onclick = () => downloadConfig(finalText, 'config.txt');
-          actions.appendChild(btnDownloadConfig);
-
-          container.appendChild(actions);
-          
-          showToast('✓ QR Generated [' + detection.type + '] ' + (optimization.strategy !== 'NONE' ? '| ' + optimization.strategy : ''), false);
-        }
-      }, 100);
+      }, 50);
     }
 
     async function copyToClipboard(text, button) {
@@ -4611,72 +4257,61 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
     }
 
     // ========================================================================
-    // EVENT DELEGATION FOR USER PANEL BUTTONS (robust)
+    // EVENT DELEGATION FOR USER PANEL BUTTONS
     // ========================================================================
     document.addEventListener('click', function(e) {
-      try {
-        // Normalize target to an Element (handle text nodes)
-        let el = e.target;
-        while (el && el.nodeType !== 1) el = el.parentNode;
-        if (!el) return;
-
-        const btn = el.closest ? el.closest('[data-action]') : (function find(elm){ while(elm){ if(elm.getAttribute && elm.getAttribute('data-action')) return elm; elm = elm.parentNode; } return null; })(el);
-        if (!btn) return;
-
-        const action = btn.dataset.action;
-
-        switch (action) {
-          case 'refresh':
-            location.reload();
-            break;
-
-          case 'copy': {
-            const urlType = btn.dataset.url;
-            const url = (window.CONFIG && urlType === 'xray') ? window.CONFIG.subXrayUrl : (window.CONFIG ? window.CONFIG.subSbUrl : null);
-            if (!url) return showToast('URL not available', true);
-            copyToClipboard(url, btn);
-            break;
-          }
-
-          case 'copy-config': {
-            const configType = btn.dataset.config;
-            const config = window.CONFIG ? (configType === 'xray' ? window.CONFIG.singleXrayConfig : window.CONFIG.singleSingboxConfig) : null;
-            if (!config) return showToast('Config not available', true);
-            copyToClipboard(config, btn);
-            break;
-          }
-
-          case 'qr': {
-            const configType = btn.dataset.config;
-            let text = null;
-            if (configType === 'xray' && window.CONFIG) text = window.CONFIG.singleXrayConfig;
-            else if (configType === 'singbox' && window.CONFIG) text = window.CONFIG.singleSingboxConfig;
-            if (!text) return showToast('Config unavailable for QR', true);
-            generateQRCode(text);
-            break;
-          }
-
-          case 'toggle': {
-            const targetId = btn.dataset.target;
-            const target = document.getElementById(targetId);
-            if (target) target.classList.toggle('hidden');
-            break;
-          }
-
-          case 'download': {
-            const type = btn.dataset.type;
-            if (!window.CONFIG) return showToast('Config unavailable', true);
-            if (type === 'xray') {
-              downloadConfig(window.CONFIG.singleXrayConfig, 'xray-config.txt');
-            } else if (type === 'singbox') {
-              downloadConfig(window.CONFIG.singleSingboxConfig, 'singbox-config.txt');
-            }
-            break;
-          }
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      
+      const action = btn.dataset.action;
+      
+      switch (action) {
+        case 'refresh':
+          location.reload();
+          break;
+          
+        case 'copy': {
+          const urlType = btn.dataset.url;
+          const url = urlType === 'xray' ? window.CONFIG.subXrayUrl : window.CONFIG.subSbUrl;
+          copyToClipboard(url, btn);
+          break;
         }
-      } catch (err) {
-        console.error('User panel click handler error:', err);
-        showToast('An unexpected error occurred', true);
+        
+        case 'copy-config': {
+          const configType = btn.dataset.config;
+          const config = configType === 'xray' ? window.CONFIG.singleXrayConfig : window.CONFIG.singleSingboxConfig;
+          copyToClipboard(config, btn);
+          break;
+        }
+        
+        case 'qr': {
+          const configType = btn.dataset.config;
+          let text;
+          if (configType === 'xray') {
+            text = window.CONFIG.singleXrayConfig;
+          } else if (configType === 'singbox') {
+            text = window.CONFIG.singleSingboxConfig;
+          }
+          if (text) generateQRCode(text);
+          break;
+        }
+        
+        case 'toggle': {
+          const targetId = btn.dataset.target;
+          const target = document.getElementById(targetId);
+          if (target) target.classList.toggle('hidden');
+          break;
+        }
+        
+        case 'download': {
+          const type = btn.dataset.type;
+          if (type === 'xray') {
+            downloadConfig(window.CONFIG.singleXrayConfig, 'xray-config.txt');
+          } else if (type === 'singbox') {
+            downloadConfig(window.CONFIG.singleSingboxConfig, 'singbox-config.txt');
+          }
+          break;
+        }
       }
     });
 
@@ -4911,23 +4546,6 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
         
         historyContent.innerHTML = historyHTML;
       }
-
-      function updateAnalytics() {
-        const st = QRCodeManagerPro.getState();
-        if (!st) return;
-        const totalEl = document.getElementById('analytics-total');
-        const optEl = document.getElementById('analytics-optimized');
-        const savedEl = document.getElementById('analytics-saved');
-        try {
-          if (totalEl) totalEl.textContent = (st.totalGenerated || 0).toString();
-          if (optEl) optEl.textContent = (st.totalOptimized || 0).toString();
-          const avgSaved = st.totalGenerated ? Math.round(((st.totalBytesSaved || 0) / (st.totalGenerated || 1)) / 1024) : 0;
-          if (savedEl) savedEl.textContent = (avgSaved > 0 ? avgSaved + ' KB' : '0%');
-        } catch (e) { console.warn('updateAnalytics error', e); }
-      }
-
-      // keep analytics current every 5s
-      setInterval(() => { try { updateAnalytics(); } catch (e) {} }, 5000);
       
       function formatTimeAgo(timestamp) {
         const diff = Date.now() - timestamp;
@@ -5009,7 +4627,7 @@ async function ProtocolOverWSHandler(request, config, env, ctx) {
       }
     };
 
-    const updateInterval = setInterval(deferredUsageUpdate, 5000); // هر 5 ثانیه
+    const updateInterval = setInterval(deferredUsageUpdate, 10000); // هر 10 ثانیه
 
     const finalCleanup = () => {
       clearInterval(updateInterval);
@@ -5028,10 +4646,6 @@ async function ProtocolOverWSHandler(request, config, env, ctx) {
         new WritableStream({
           async write(chunk, controller) {
             sessionUsage += chunk.byteLength;
-            
-            if (sessionUsage >= CONST.TRAFFIC_BATCH_SIZE) {
-              deferredUsageUpdate();
-            }
 
             if (udpStreamWriter) {
               return udpStreamWriter.write(chunk);
@@ -5695,7 +5309,7 @@ export default {
           return new Response(JSON.stringify({ error: 'Invalid UUID' }), { status: 400, headers });
         }
         
-        const userData = await env.DB.prepare("SELECT * FROM users WHERE uuid = ?").bind(uuid).first();
+        const userData = await getUserData(env, uuid, ctx);
         if (!userData) {
           return new Response(JSON.stringify({ error: 'User not found' }), { status: 404, headers });
         }
@@ -5704,17 +5318,8 @@ export default {
           traffic_used: userData.traffic_used || 0,
           traffic_limit: userData.traffic_limit,
           expiration_date: userData.expiration_date,
-          expiration_time: userData.expiration_time,
-          is_expired: isExpired(userData.expiration_date, userData.expiration_time),
-          timestamp: Date.now()
-        }), { 
-          status: 200, 
-          headers: {
-            ...Object.fromEntries(headers),
-            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
-            'Pragma': 'no-cache'
-          }
-        });
+          expiration_time: userData.expiration_time
+        }), { status: 200, headers });
       }
 
       // Favicon redirect
