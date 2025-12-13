@@ -4228,8 +4228,11 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
 
         let QR_LAST_TEXT = '';
 
-        // Expose test utility for console / external usage
-        try { window.QR_LAST_TEXT = QR_LAST_TEXT; window.testScan = testScan; } catch (e) {}
+        // Expose test utility for console / external usage (safe in browser only)
+        try {
+          window.testScan = testScan;
+          window.getQRLastText = () => QR_LAST_TEXT;
+        } catch (e) {}
 
         function generateQRCode(text) {
       const container = document.getElementById('qr-display');
