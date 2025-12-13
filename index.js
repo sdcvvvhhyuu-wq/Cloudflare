@@ -3801,14 +3801,11 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
         let optimizedText = originalText;
         let optimizationApplied = 'NONE';
         let bytesSaved = 0;
-        const cfg = window.CONFIG || {};
-        const subXray = cfg.subXrayUrl || '';
-        const subSb = cfg.subSbUrl || '';
 
-        if (detectionResult.complexity >= 80 && detectionResult.category === 'proxy') {
-          if (subXray) {
-            optimizedText = 'v2rayng://install-config?url=' + encodeURIComponent(subXray);
-            optimizationApplied = 'INSTALL_LINK_XRAY';
+        if (detectionResult.category === 'proxy') {
+          optimizedText = originalText.trim();
+          if (optimizedText.length < originalText.length) {
+            optimizationApplied = 'TRIMMED';
             bytesSaved = originalText.length - optimizedText.length;
           }
         }
@@ -4174,12 +4171,16 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
           }
         }
         
+        const lengthBits = typeNumber >= 10 ? 16 : 8;
+        
         for (let i = 0; i < dataList.length; i++) {
           const data = dataList[i];
+          const encoder = new TextEncoder();
+          const bytes = encoder.encode(data.data);
           put(4, 4);
-          put(data.data.length, 8);
-          for (let j = 0; j < data.data.length; j++) {
-            put(data.data.charCodeAt(j), 8);
+          put(bytes.length, lengthBits);
+          for (let j = 0; j < bytes.length; j++) {
+            put(bytes[j], 8);
           }
         }
         
