@@ -4147,9 +4147,97 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
     // USER INTERFACE FUNCTIONS
     // ========================================================================
     
-    function generateQRCode(text) {
+        // Normalize and validate inputs to reduce "Decoding failed" problems
+        function cleanConfigString(text) {
+          if (!text || typeof text !== 'string') return text;
+          let t = text.trim();
+
+          // Strip common HTML wrappers
+          t = t.replace(/^<pre[^>]*>/i, '').replace(/<\/pre>$/i, '').trim();
+
+          // Strip surrounding quotes
+          if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+            t = t.slice(1, -1).trim();
+          }
+
+          // For vmess:// payloads, remove whitespace/newlines inside the base64 block
+          if (/^vmess:\/\//i.test(t)) {
+            const body = t.slice(8).replace(/\s+/g, '');
+            t = 'vmess://' + body;
+          } else if (/^\s*[\{\[]/.test(t)) {
+            // If looks like JSON, try to detect vmess single-config (convert to vmess://base64)
+            try {
+              const parsed = JSON.parse(t);
+              if (parsed && (parsed.add || parsed.id || parsed.ps || parsed.port)) {
+                const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(parsed))));
+                t = 'vmess://' + encoded;
+              }
+            } catch (e) {
+              // fallthrough to whitespace removal
+              t = t.replace(/\s+/g, '');
+            }
+          } else if (/^[A-Za-z0-9+\/=\s]{40,}$/.test(t) && t.indexOf('://') === -1) {
+            // Suspected raw base64 block
+            t = t.replace(/\s+/g, '');
+          } else {
+            t = t.replace(/\r?\n/g, '').trim();
+          }
+
+          return t;
+        }
+
+        function validateOptimizedPayload(text) {
+          if (!text || typeof text !== 'string') return { valid: false, message: 'Empty payload' };
+          const t = text.trim();
+
+          if (/^vmess:\/\//i.test(t)) {
+            const payload = t.slice(8).replace(/\s+/g, '');
+            try {
+              const json = atob(payload);
+              JSON.parse(json);
+              return { valid: true };
+            } catch (e) {
+              return { valid: false, message: 'Invalid vmess base64 or JSON' };
+            }
+          }
+
+          if (/^(vless|ss|trojan):\/\//i.test(t)) {
+            if (t.includes('@') || /:\/\//.test(t)) return { valid: true };
+            return { valid: false, message: 'Malformed proxy URL' };
+          }
+
+          return { valid: true };
+        }
+
+        // Simple test-scan utility for users to validate payloads before scanning
+        function testScan() {
+          const payload = window.QR_LAST_TEXT || '';
+          if (!payload) {
+            showToast('No QR payload to test', true);
+            return { ok: false, message: 'No payload' };
+          }
+          const cleaned = cleanConfigString(payload);
+          const validation = validateOptimizedPayload(cleaned);
+          if (!validation.valid) {
+            showToast('✗ Test failed: ' + validation.message, true);
+            return { ok: false, message: validation.message };
+          }
+          showToast('✓ Test passed: payload looks valid', false);
+          return { ok: true };
+        }
+
+        let QR_LAST_TEXT = '';
+
+        // Expose test utility for console / external usage
+        try { window.QR_LAST_TEXT = QR_LAST_TEXT; window.testScan = testScan; } catch (e) {}
+
+        function generateQRCode(text) {
       const container = document.getElementById('qr-display');
-      container.innerHTML = '';
+          container.innerHTML = '';
+
+          // Normalize input to avoid VMESS/base64 whitespace issues
+          text = cleanConfigString(text);
+          QR_LAST_TEXT = text;
       
       const loading = document.createElement('p');
       loading.className = 'muted';
@@ -4160,6 +4248,12 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
         container.innerHTML = '';
         
         try {
+          // Validate common proxy payloads to warn users about decoding errors
+          const validation = validateOptimizedPayload(text);
+          if (!validation.valid) {
+            showToast('⚠️ Validation: ' + validation.message, true);
+          }
+
           const canvas = QRCodeGenerator.generate(text, 256);
           container.appendChild(canvas);
           showToast('✓ QR Generated (Embedded)', false);
@@ -4183,7 +4277,14 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
             console.warn('CDN QR failed, trying Google Charts:', cdnErr.message);
             try {
               const img = document.createElement('img');
-              img.src = 'https://chart.googleapis.com/chart?cht=qr&chl=' + encodeURIComponent(text) + '&chs=250x250&choe=UTF-8&chld=M|0';
+              const encoded = encodeURIComponent(text);
+              const url = 'https://chart.googleapis.com/chart?cht=qr&chl=' + encoded + '&chs=250x250&choe=UTF-8&chld=M|0';
+              if (url.length > 2000) {
+                container.innerHTML = '<p style="color:var(--danger)">Content Too Large for QR Code. Use Copy/Download.</p>';
+                showToast('Content too large for QR - use copy/download', true);
+                return;
+              }
+              img.src = url;
               img.style.maxWidth = '100%';
               img.alt = 'QR Code';
               img.onerror = function() {

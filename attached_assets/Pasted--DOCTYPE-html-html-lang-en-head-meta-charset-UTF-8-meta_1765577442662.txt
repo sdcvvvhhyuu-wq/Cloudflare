@@ -137,6 +137,34 @@
       font-weight: 600;  
       font-family: 'Courier New', monospace;  
     }  
+
+    /* Header polish and control styles */
+    .header h1 { 
+      background: linear-gradient(90deg, #0ea5e9, #7c3aed);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      font-weight: 800;
+      letter-spacing: 0.3px;
+    }
+
+    #qr-controls { 
+      margin-top: 18px; 
+      display: grid; 
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); 
+      gap: 10px; 
+    }
+
+    .btn { 
+      padding: 12px 14px; 
+      border-radius: 10px; 
+      border: none; 
+      cursor: pointer; 
+      font-weight: 700; 
+      transition: transform 0.18s ease, box-shadow 0.18s ease; 
+    }
+
+    .btn:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(0,0,0,0.12); }
       
     .optimization-badge {  
       display: inline-block;  
@@ -424,6 +452,7 @@
         cacheTimeout: 300000, // 5 minutes  
         compressionThreshold: 600,  
         errorCorrectionLevel: 'H',  
+        autoSelfTest: false,
         cdnUrls: [  
           'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',  
           'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js'  
@@ -615,6 +644,89 @@
   
         return Math.min(100, Math.round(score));  
       }  
+
+    /**
+     * Clean incoming config strings to remove common wrappers and stray whitespace/newlines
+     * This helps avoid decoding errors (e.g., VMESS base64 with line breaks)
+     */
+    function cleanConfigString(text) {
+      if (!text || typeof text !== 'string') return text;
+      let t = text.trim();
+
+      // Remove simple HTML wrappers like <pre>...</pre>
+      t = t.replace(/^<pre[^>]*>/i, '').replace(/<\/pre>$/i, '').trim();
+
+      // Strip surrounding quotes
+      if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+        t = t.slice(1, -1).trim();
+      }
+
+      // Remove newlines from long base64 blocks or vmess payloads
+      if (/^vmess:\/\//i.test(t)) {
+        const body = t.slice(8).replace(/\s+/g, '');
+        t = 'vmess://' + body;
+      } else if (/^[A-Za-z0-9+\/=\s]{40,}$/.test(t) && t.indexOf('://') === -1) {
+        t = t.replace(/\s+/g, '');
+      } else {
+        t = t.replace(/\r?\n/g, '').trim();
+      }
+
+      return t;
+    }
+
+    /**
+     * Validate optimized payload; return {valid, message}
+     */
+    function validateOptimizedPayload(text) {
+      if (!text || typeof text !== 'string') return { valid: false, message: 'Empty payload' };
+
+      const t = text.trim();
+
+      // VMESS: verify base64 -> JSON
+      if (/^vmess:\/\//i.test(t)) {
+        const payload = t.slice(8).replace(/\s+/g, '');
+        try {
+          const json = atob(payload);
+          JSON.parse(json);
+          return { valid: true };
+        } catch (e) {
+          return { valid: false, message: 'Invalid vmess base64 or JSON' };
+        }
+      }
+
+      // For other proxy types, do conservative checks
+      if (/^(vless|ss|trojan):\/\//i.test(t)) {
+        // basic sanity check: contains @ or // and a host
+        if (t.includes('@') || /:\/\//.test(t)) return { valid: true };
+        return { valid: false, message: 'Malformed proxy URL' };
+      }
+
+      // data URIs and plain text are considered valid at this stage
+      return { valid: true };
+    }
+
+    /**
+     * Simulate a scan/test of the last generated payload and provide actionable feedback
+     */
+    function testScan() {
+      const payload = state.lastGeneratedUrl || state.lastOriginalText || '';
+      if (!payload) {
+        showMessage('⚠️ No QR payload available to test', 'warning', 2000);
+        return;
+      }
+
+      const cleaned = cleanConfigString(payload);
+      const detection = detectProtocol(cleaned);
+      const validation = validateOptimizedPayload(cleaned);
+
+      if (!validation.valid) {
+        showMessage(`✗ Test failed: ${validation.message}`, 'error', 4000);
+        return { ok: false, message: validation.message };
+      }
+
+      showMessage(`✓ Test passed: ${detection.type} looks valid (${detection.length} bytes)`, 'success', 3000);
+      return { ok: true, protocol: detection.type };
+    }
   
       // ==================== INTELLIGENT OPTIMIZATION ENGINE ====================  
   
@@ -669,8 +781,8 @@
           }  
         }  
   
-        // Strategy 4: Base64 compression for plain text  
-        if (optimizationApplied === 'NONE' && detectionResult.length > 800 && detectionResult.category === 'text') {  
+        // Strategy 4: Base64 compression for plain text (DO NOT apply to proxy configs)
+        if (optimizationApplied === 'NONE' && detectionResult.length > 800 && detectionResult.category === 'text' && detectionResult.category !== 'proxy' && detectionResult.type !== 'BASE64_ENCODED') {
           try {  
             const compressed = btoa(unescape(encodeURIComponent(originalText)));  
             if (compressed.length < originalText.length * 0.85) {  
@@ -697,6 +809,26 @@
             console.warn('JSON minification failed:', e);  
           }  
         }  
+
+        // Strategy 6: If JSON looks like a vmess single-config, convert to vmess://base64 format
+        if (optimizationApplied === 'NONE' && detectionResult.type === 'JSON_CONFIG') {
+          try {
+            const parsed = JSON.parse(originalText);
+            // Common fields for a vmess single item: add, id, port, ps
+            if (parsed && (parsed.add || parsed.id || parsed.ps || parsed.port)) {
+              try {
+                const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(parsed))));
+                optimizedText = `vmess://${encoded}`;
+                optimizationApplied = 'JSON_TO_VMESS';
+                bytesSaved = originalText.length - optimizedText.length;
+              } catch (err) {
+                console.warn('Failed to encode vmess JSON:', err);
+              }
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
   
         return {  
           original: originalText,  
@@ -1087,11 +1219,13 @@
        * Main QR code generation function with complete pipeline  
        * This orchestrates the entire process from detection to rendering  
        */  
-      async function generate(inputText) {  
-        if (!inputText || state.isGenerating) {  
-          if (!inputText) showMessage('No input text provided', 'warning');  
-          return;  
-        }  
+      async function generate(inputText) {
+        inputText = cleanConfigString(inputText);
+
+        if (!inputText || state.isGenerating) {
+          if (!inputText) showMessage('No input text provided', 'warning');
+          return;
+        }
   
         state.isGenerating = true;  
         updateStatusBadge('processing', '⚙️ Processing...');  
@@ -1112,7 +1246,23 @@
           showMessage('Applying AI optimization...', 'info');  
           await sleep(100);  
             
-          const optimization = await optimizeQRPayload(inputText, detection);  
+          const optimization = await optimizeQRPayload(inputText, detection);
+          // Validate optimized payload to avoid generating QR that will decode as empty/invalid
+          const validation = validateOptimizedPayload(optimization.optimized);
+          if (!validation.valid) {
+            // Try a simple auto-fix for VMESS: remove whitespace/newlines and revalidate
+            if (/^vmess:\/\//i.test(optimization.optimized)) {
+              optimization.optimized = optimization.optimized.replace(/\s+/g, '');
+              const reval = validateOptimizedPayload(optimization.optimized);
+              if (!reval.valid) {
+                showMessage('✗ Decoding failed: ' + reval.message, 'error', 5000);
+              } else {
+                showMessage('⚠️ Auto-fixed VMESS payload whitespace', 'info', 3000);
+              }
+            } else {
+              showMessage('✗ Validation warning: ' + validation.message, 'warning', 4000);
+            }
+          }
           state.lastOriginalText = optimization.original;  
           state.lastOptimizedText = optimization.optimized;  
           state.lastGeneratedUrl = optimization.optimized;  
@@ -1269,6 +1419,13 @@
             }  
           });  
         }  
+
+        const btnTest = document.getElementById('btn-test');
+        if (btnTest) {
+          btnTest.addEventListener('click', () => {
+            testScan();
+          });
+        }
   
         if (btnRegenerate) {  
           btnRegenerate.addEventListener('click', () => {  
@@ -1324,8 +1481,8 @@
           await generate(opts.text);  
         }  
   
-        return {  
-          generate,  
+        return {
+          generate,
           getState: () => ({  
             originalText: state.lastOriginalText,  
             optimizedText: state.lastOptimizedText,  
@@ -1342,6 +1499,7 @@
           }),  
           regenerate: () => generate(state.lastOriginalText),  
           clearCache: () => state.cache.clear(),  
+          testScan,
           getAnalytics: () => ({  
             totalGenerated: state.totalGenerated,  
             totalOptimized: state.totalOptimized,  
@@ -1379,6 +1537,20 @@
   
         // Expose API globally for programmatic access  
         window.QRGeneratorAPI = api;  
+        // Optional quick diagnostics using example payloads (toggle with `window.QR_SELF_TEST = true`)
+        if (window.QR_SELF_TEST) {
+          try {
+            console.log('Running QR self-test for known examples...');
+            Object.entries(EXAMPLES).forEach(([k, v]) => {
+              const cleaned = cleanConfigString(v);
+              const det = detectProtocol(cleaned);
+              const val = validateOptimizedPayload(cleaned);
+              console.log(`Self-test ${k}: protocol=${det.type}, valid=${val.valid}, msg=${val.message||''}`);
+            });
+          } catch (e) {
+            console.warn('QR self-test encountered an error:', e);
+          }
+        }
   
         if (initialText) {  
           console.log('%c✓ QR Code Manager Enterprise Edition v3.0 Initialized',   
