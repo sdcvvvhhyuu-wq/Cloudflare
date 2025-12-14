@@ -409,7 +409,7 @@ async function cleanupOldIps(env, ctx) {
   try {
     const cleanupPromise = env.DB.prepare(
       "DELETE FROM user_ips WHERE last_seen < datetime('now', ?)"
-    ).bind(-${CONST.IP_CLEANUP_AGE_DAYS} days).run();
+    ).bind(`-${CONST.IP_CLEANUP_AGE_DAYS} days`).run();
     
     if (ctx) {
       ctx.waitUntil(cleanupPromise);
@@ -417,7 +417,7 @@ async function cleanupOldIps(env, ctx) {
       await cleanupPromise;
     }
   } catch (e) {
-    console.error(cleanupOldIps error: ${e.message});
+    console.error(`cleanupOldIps error: ${e.message}`);
   }
 }
 
@@ -427,7 +427,7 @@ async function cleanupOldIps(env, ctx) {
 
 async function isSuspiciousIP(ip, scamalyticsConfig, threshold = CONST.SCAMALYTICS_THRESHOLD) {
   if (!scamalyticsConfig.username || !scamalyticsConfig.apiKey) {
-    console.warn(⚠️  Scamalytics not configured. IP ${ip} allowed (fail-open).);
+    console.warn(`⚠️  Scamalytics not configured. IP ${ip} allowed (fail-open).`);
     return false;
   }
 
@@ -447,9 +447,9 @@ async function isSuspiciousIP(ip, scamalyticsConfig, threshold = CONST.SCAMALYTI
     return data.score >= threshold;
   } catch (e) {
     if (e.name === 'AbortError') {
-      console.warn(Scamalytics timeout for ${ip}. Allowing (fail-open).);
+      console.warn(`Scamalytics timeout for ${ip}. Allowing (fail-open).`);
     } else {
-      console.error(Scamalytics error for ${ip}: ${e.message}. Allowing (fail-open).);
+      console.error(`Scamalytics error for ${ip}: ${e.message}. Allowing (fail-open).`);
     }
     return false;
   } finally {
@@ -515,7 +515,7 @@ async function generateHOTP(secretBuffer, counter) {
 }
 
 async function validateTOTP(secret, code) {
-  if (!secret  !code  code.length !== 6 || !/^\d{6}$/.test(code)) {
+  if (!secret || !code || code.length !== 6 || !/^\d{6}$/.test(code)) {
     return false;
   }
   
@@ -560,7 +560,7 @@ async function checkRateLimit(db, key, limit, ttl) {
     await kvPut(db, key, (count + 1).toString(), { expirationTtl: ttl });
     return false;
   } catch (e) {
-    console.error(checkRateLimit error for ${key}: ${e});
+    console.error(`checkRateLimit error for ${key}: ${e}`);
     return false;
   }
 }
@@ -600,7 +600,7 @@ function generateRandomPath(length = 12) {
   for (let i = 0; i < length; i++) {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-  return /${result};
+  return `/${result}`;
 }
 
 const CORE_PRESETS = {
@@ -956,7 +956,7 @@ async function performHealthCheck(env, ctx) {
 // ADMIN PANEL HTML - ترکیب از هر دو اسکریپت با تمام قابلیت‌ها
 // ============================================================================
 
-const adminLoginHTML = <!DOCTYPE html>
+const adminLoginHTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -1047,7 +1047,7 @@ const adminLoginHTML = <!DOCTYPE html>
 </html>`;
 
 // Admin Panel HTML با تمام قابلیت‌های هر دو اسکریپت
-const adminPanelHTML = <!DOCTYPE html>
+const adminPanelHTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -2447,7 +2447,7 @@ async function handleAdminRequest(request, env, ctx, adminPrefix) {
         const origin = request.headers.get('Origin');
         const secFetch = request.headers.get('Sec-Fetch-Site');
 
-        if (!ori new URL(origin).hostname !== url.hostname e || secFetch !== 'same-origin') {
+        if (!origin || secFetch !== 'same-origin') {
           const headers = new Headers(jsonHeader);
           addSecurityHeaders(headers, null, {});
           return new Response(JSON.stringify({ error: 'Invalid request origin' }), { status: 403, headers });
@@ -2455,7 +2455,7 @@ async function handleAdminRequest(request, env, ctx, adminPrefix) {
 
         const csrfToken = request.headers.get('X-CSRF-Token');
         const cookieCsrf = request.headers.get('Cookie')?.match(/csrf_token=([^;]+)/)?.[1];
-        if (!csrfTo !cookieCsrf f || !timingSafeEqual(csrfToken, cookieCsrf)) {
+        if (!csrfToken || !cookieCsrf || !timingSafeEqual(csrfToken, cookieCsrf)) {
           const headers = new Headers(jsonHeader);
           addSecurityHeaders(headers, null, {});
           return new Response(JSON.stringify({ error: 'CSRF validation failed' }), { status: 403, headers });
@@ -4670,7 +4670,7 @@ async function handleUserPanel(request, userID, hostName, proxyAddress, userData
     });
   </script>
 </body>
-</html>`;
+</html>;
 
     const nonce = generateNonce();
     const headers = new Headers({ 'Content-Type': 'text/html;charset=utf-8' });
@@ -5246,7 +5246,8 @@ async function socks5Connect(addressType, addressRemote, portRemote, log, parsed
     const encoder = new TextEncoder();
 
     await writer.write(new Uint8Array([5, 2, 0, 2]));
-    let res = (await reader.read res[0] !== 0x05 es || res[0] !== 0x05 || res[1] === 0xff) {
+    let res = (await reader.read()).value;
+    if (!res || res[0] !== 0x05 || res[1] === 0xff) {
       throw new Error('SOCKS5 handshake failed');
     }
 
@@ -5262,8 +5263,9 @@ async function socks5Connect(addressType, addressRemote, portRemote, log, parsed
         ...encoder.encode(password)
       ]);
       await writer.write(authRequest);
-      res = (await reader.read() res[0] !== 0x01 es || res[0] !== 0x01 || res[1] !== 0x00) {
-        throw new Error(SOCKS5 auth failed (Code: ${res[1]}));
+      res = (await reader.read()).value;
+      if (!res || res[0] !== 0x01 || res[1] !== 0x00) {
+        throw new Error(`SOCKS5 auth failed (Code: ${res[1]})`);
       }
     }
 
@@ -5278,14 +5280,14 @@ async function socks5Connect(addressType, addressRemote, portRemote, log, parsed
       case 3:
         const ipv6Bytes = parseIPv6(addressRemote);
         if (ipv6Bytes.length !== 16) {
-          throw new Error(Failed to parse IPv6: ${addressRemote});
+          throw new Error('Failed to parse IPv6: ' + addressRemote);
         }
         dstAddr = new Uint8Array(1 + 16);
         dstAddr[0] = 4;
         dstAddr.set(ipv6Bytes, 1);
         break;
       default:
-        throw new Error(Invalid address type: ${addressType});
+        throw new Error('Invalid address type: ' + addressType);
     }
 
     const socksRequest = new Uint8Array([
@@ -5295,15 +5297,15 @@ async function socks5Connect(addressType, addressRemote, portRemote, log, parsed
     
     res = (await reader.read()).value;
     if (!res || res[1] !== 0x00) {
-      throw new Error(SOCKS5 connection failed (Code: ${res[1]}));
+      throw new Error(`SOCKS5 connection failed (Code: ${res[1]})`);
     }
 
-    log(SOCKS5 connection to ${addressRemote}:${portRemote} established);
+    log(`SOCKS5 connection to ${addressRemote}:${portRemote} established`);
     success = true;
     return socket;
 
   } catch (err) {
-    log(socks5Connect error: ${err.message}, err);
+    log('socks5Connect error: ' + err.message, err);
     throw err;
   } finally {
     if (writer) writer.releaseLock();
@@ -5668,10 +5670,10 @@ export default {
             headers: mutableHeaders
           });
         } catch (e) {
-          console.error(Reverse Proxy Error: ${e.message}, e.stack);
+          console.error(`Reverse Proxy Error: ${e.message}`, e.stack);
           const headers = new Headers();
           addSecurityHeaders(headers, null, {});
-          return new Response(Proxy error: ${e.message}, { status: 502, headers });
+          return new Response(`Proxy error: ${e.message}`, { status: 502, headers });
         }
       }
 
@@ -6275,5 +6277,7 @@ const adminHTML = <!DOCTYPE html>
     <div class="divider"></div>
     <div class="note">This admin shell is UI-ready. Wire it to your D1/API endpoints for full functionality. No features were removed; only client-side errors were fixed and the interface enhanced.</div>
   </div>
+</body>
+</html>;
 </body>
 </html>;
